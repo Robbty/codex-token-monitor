@@ -9,7 +9,7 @@ unbekannte Felder werden ignoriert, damit Codex-Updates nichts brechen.
 ## Bauen
 
 ```bash
-cd /home/peter/projekte/codex-token-monitor
+cd /pfad/zu/codex-token-monitor
 cargo build --release
 # Binary: target/release/codex-tokens
 ```
@@ -53,7 +53,7 @@ sudo install -m 755 target/release/codex-tokens /usr/local/bin/
 **Variante 4 — direkt mit Cargo:**
 
 ```bash
-cargo install --path /home/peter/projekte/codex-token-monitor
+cargo install --path /pfad/zu/codex-token-monitor
 # Binary landet in ~/.cargo/bin/codex-tokens (in $PATH, wenn Rust regulär installiert wurde)
 ```
 
@@ -95,14 +95,14 @@ egal — dank `--wait` darf der Monitor vor oder nach Codex starten.
 **Terminal 1 — Monitor:**
 
 ```bash
-cd /home/peter/projekte/dein-projekt
+cd /pfad/zu/deinem-projekt
 codex-tokens --cwd --follow --wait
 ```
 
 **Terminal 2 — Codex:**
 
 ```bash
-cd /home/peter/projekte/dein-projekt
+cd /pfad/zu/deinem-projekt
 codex
 ```
 
@@ -178,7 +178,7 @@ das wieder lösen:
 
 ```text
 session_id=019e218d-…
-session_cwd=/home/peter/projekte/…
+session_cwd=/pfad/zu/deinem-projekt
 context_window=258400
 percent_left=79
 percent_used=21
