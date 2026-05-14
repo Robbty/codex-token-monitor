@@ -1,0 +1,80 @@
+//! Read a rollout JSONL file: scan existing lines, then optionally poll for new ones.
+//!
+//! No `notify` dependency — a small size-poll is plenty for a status display.
+
+use std::fs::File;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use anyhow::Result;
+
+use crate::protocol::RolloutItem;
+
+const POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+pub struct Tail {
+    reader: BufReader<File>,
+    path: PathBuf,
+    pub follow: bool,
+    /// File size at open time. Used to mark "initial drain" boundary.
+    initial_len: u64,
+}
+
+impl Tail {
+    pub fn open(path: &Path, follow: bool) -> Result<Self> {
+        let file = File::open(path)?;
+        let initial_len = file.metadata()?.len();
+        Ok(Self {
+            reader: BufReader::new(file),
+            path: path.to_path_buf(),
+            follow,
+            initial_len,
+        })
+    }
+
+    /// True once the reader has passed the byte length that the file had when
+    /// `open` was called. Use this to print a snapshot exactly once after the
+    /// initial drain in follow mode.
+    pub fn passed_initial(&mut self) -> Result<bool> {
+        Ok(self.reader.stream_position()? >= self.initial_len)
+    }
+
+    /// Returns the next parsed RolloutItem.
+    ///
+    /// In non-follow mode returns `Ok(None)` at EOF.
+    /// In follow mode blocks (polling) until another line arrives.
+    pub fn next_item(&mut self) -> Result<Option<RolloutItem>> {
+        loop {
+            let mut line = String::new();
+            let n = self.reader.read_line(&mut line)?;
+            if n == 0 {
+                if !self.follow {
+                    return Ok(None);
+                }
+                std::thread::sleep(POLL_INTERVAL);
+                self.maybe_resync()?;
+                continue;
+            }
+            let trimmed = line.trim_end();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<RolloutItem>(trimmed) {
+                Ok(item) => return Ok(Some(item)),
+                Err(_) => continue, // ignore malformed / unknown shapes
+            }
+        }
+    }
+
+    fn maybe_resync(&mut self) -> Result<()> {
+        let len = std::fs::metadata(&self.path)?.len();
+        let pos = self.reader.stream_position()?;
+        if len < pos {
+            // file truncated/rotated — rewind to start to be safe
+            self.reader.seek(SeekFrom::Start(0))?;
+            self.initial_len = len;
+        }
+        Ok(())
+    }
+}
