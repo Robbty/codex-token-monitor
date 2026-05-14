@@ -6,6 +6,39 @@ Patchen von Codex nötig, keine Abhängigkeit auf interne Codex-Crates. Nur die
 JSON-Felder, die das Tool nutzt, sind als minimaler Serde-Typ nachgebaut;
 unbekannte Felder werden ignoriert, damit Codex-Updates nichts brechen.
 
+## Schnellinstallation (ohne Bauen)
+
+Vorgefertigte Binaries gibt es auf der
+[Releases-Seite](https://github.com/Robbty/codex-token-monitor/releases).
+
+Statisch verlinkte Variante (empfohlen — läuft auf jedem x86_64-Linux/WSL2
+ohne Abhängigkeiten):
+
+```bash
+mkdir -p ~/.local/bin
+curl -sSL https://github.com/Robbty/codex-token-monitor/releases/latest/download/codex-tokens-x86_64-linux-musl \
+  -o ~/.local/bin/codex-tokens
+chmod +x ~/.local/bin/codex-tokens
+codex-tokens --version
+```
+
+Falls `~/.local/bin` nicht im `$PATH` liegt, in `~/.bashrc` ergänzen:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Integrität prüfen (optional, aber empfohlen):
+
+```bash
+curl -sSL https://github.com/Robbty/codex-token-monitor/releases/latest/download/SHA256SUMS \
+  | grep codex-tokens-x86_64-linux-musl \
+  | sha256sum -c -
+```
+
+Für ältere Distros bzw. wenn die dynamische Variante reicht, die `-gnu`-Datei
+verwenden — Voraussetzung: glibc ≥ 2.35.
+
 ## Bauen
 
 ```bash
