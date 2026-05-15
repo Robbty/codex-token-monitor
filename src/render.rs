@@ -10,15 +10,25 @@ pub enum Format {
     Json,
 }
 
-pub fn render(state: &TokenState, format: &Format) -> String {
+pub fn render(state: &TokenState, format: &Format, multi: bool) -> String {
     match format {
-        Format::Kv => render_kv(state),
+        Format::Kv => render_kv(state, multi),
         Format::Json => render_json(state),
     }
 }
 
-fn render_kv(s: &TokenState) -> String {
+fn render_kv(s: &TokenState, multi: bool) -> String {
     let mut out = String::new();
+
+    // In multi-session mode prepend a clearly visible block header so a human
+    // reading the stream can spot session boundaries at a glance. Bash scripts
+    // can keep using the `session_id=...` line below as the maschinenlesbarer
+    // anchor.
+    if multi && let Some(id) = &s.session_id {
+        out.push_str("=== session ");
+        out.push_str(id);
+        out.push_str(" ===\n");
+    }
 
     if let Some(id) = &s.session_id {
         push_kv(&mut out, "session_id", id);

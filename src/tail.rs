@@ -68,7 +68,19 @@ impl Tail {
     }
 
     fn maybe_resync(&mut self) -> Result<()> {
-        let len = std::fs::metadata(&self.path)?.len();
+        // If the file vanished between polls, fail clearly so the caller can
+        // exit the tail thread (multi-session mode then drops this session
+        // from its map instead of looping forever).
+        let len = match std::fs::metadata(&self.path) {
+            Ok(m) => m.len(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(anyhow::anyhow!(
+                    "rollout file disappeared: {}",
+                    self.path.display()
+                ));
+            }
+            Err(e) => return Err(e.into()),
+        };
         let pos = self.reader.stream_position()?;
         if len < pos {
             // file truncated/rotated — rewind to start to be safe

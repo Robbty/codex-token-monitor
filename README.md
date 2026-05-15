@@ -115,6 +115,13 @@ codex-tokens [OPTIONS]
       --wait          Wartet, bis eine passende Rollout-Datei erscheint, statt sofort abzubrechen.
                       Damit kann der Monitor vor Codex gestartet werden.
       --wait-timeout SECS  Sekunden-Limit für --wait (Default: unbegrenzt).
+      --all           Multi-Session: mit --cwd ALLE aktiven passenden Sessions gleichzeitig
+                      verfolgen (statt nur der neuesten). Jeder Block wird mit
+                      "=== session <uuid> ===" markiert.
+      --max-age MINUTES    Nur mit --all: Rollouts, die länger nicht beschrieben wurden,
+                           gelten als nicht-aktiv (Default: 5).
+      --watch-new     Nur mit --all --follow: scannt alle 5 s nach neu aufgetauchten Rollouts
+                      und hängt sie live in den Stream.
   -h, --help / -V, --version
 ```
 
@@ -143,6 +150,98 @@ In Terminal 1 läuft ab jetzt ein Dauerstream: nach jedem abgeschlossenen
 Codex-Turn erscheint ein neuer Snapshot, getrennt durch eine `---`-Zeile.
 
 Beenden: `Strg+C` im Monitor-Terminal.
+
+## Mehrere Codex-Sessions im selben Verzeichnis
+
+Standardmäßig betrachtet `codex-tokens` nur **eine** Session pro Verzeichnis
+(die jüngste). Wenn du mehrere Codex-Instanzen parallel im selben
+Projektverzeichnis laufen lässt — etwa in verschiedenen tmux-Panes oder
+Terminals — kannst du sie alle gemeinsam erfassen:
+
+```bash
+codex-tokens --cwd --all --follow
+```
+
+Jede Session wird in der Ausgabe durch einen eigenen Block-Header sichtbar
+abgegrenzt:
+
+```text
+=== session 019e2b32-2d0a-7951-802a-86f2f48d1b5c ===
+session_id=019e2b32-2d0a-7951-802a-86f2f48d1b5c
+session_cwd=/pfad/zum/projekt
+percent_left=95
+…
+---
+=== session 019e1716-aee2-7402-8806-2623d765c67c ===
+session_id=019e1716-aee2-7402-8806-2623d765c67c
+session_cwd=/pfad/zum/projekt
+percent_left=42
+…
+---
+```
+
+Im JSON-Modus (`--json --all`) wird stattdessen NDJSON ausgegeben: eine
+JSON-Zeile pro Session und Update, ideal für `jq`-Pipelines.
+
+### Was zählt als "aktive" Session?
+
+Per Default werden Rollouts ignoriert, deren letzte Änderung länger als
+**5 Minuten** zurückliegt. Damit fallen alte Sessions desselben
+Verzeichnisses automatisch raus. Das Fenster ist konfigurierbar:
+
+```bash
+codex-tokens --cwd --all --max-age 30    # 30 min - großzügiger
+codex-tokens --cwd --all --max-age 1     # 1 min - nur ganz frische
+```
+
+Soll nichts gefiltert werden (z. B. für eine Archiv-Auswertung), kann
+ein sehr hoher Wert verwendet werden:
+
+```bash
+codex-tokens --cwd --all --max-age 99999
+```
+
+### Neue Sessions während des Laufs erkennen
+
+Standardmäßig folgt der Monitor nur den Sessions, die beim Start vorhanden
+waren. Mit `--watch-new` scannt er zusätzlich alle 5 Sekunden das
+Sessions-Verzeichnis auf neu aufgetauchte Rollouts:
+
+```bash
+codex-tokens --cwd --all --follow --watch-new --wait
+```
+
+Damit kannst du den Monitor *vor* Codex starten und beliebig viele
+Codex-Instanzen nachträglich hinzustarten — sie erscheinen automatisch
+im Stream.
+
+### Filtern in Bash
+
+Nur eine bestimmte Session aus dem Multi-Stream herauspicken:
+
+```bash
+SESSION=019e2b32-2d0a-7951-802a-86f2f48d1b5c
+codex-tokens --cwd --all --follow \
+  | awk -v s="=== session $SESSION ===" '
+      $0 == s {p=1}
+      p {print}
+      p && /^---$/ {p=0}
+    '
+```
+
+Mit JSON-Output und `jq`:
+
+```bash
+codex-tokens --cwd --all --json --follow \
+  | jq -c --arg s "$SESSION" 'select(.session_id == $s)'
+```
+
+Aggregierte Übersicht aller aktiven Sessions:
+
+```bash
+codex-tokens --cwd --all --json \
+  | jq -s 'map({id: .session_id, left: .percent_left, used: .tokens_in_context})'
+```
 
 ## Aufruf innerhalb der Codex-TUI
 
@@ -292,8 +391,10 @@ Drei Modi, in dieser Priorität:
 2. `--cwd [PATH]` — liest die erste Zeile (`session_meta`) jeder Rollout-Datei
    und nimmt die neueste, deren `cwd` zum angegebenen Pfad passt.
 3. Ohne Option: die jüngste Datei nach Modifikationszeit. Bei mehreren
-   parallel laufenden Codex-Sessions ggf. ambig — dann lieber `--thread`
-   oder `--cwd` verwenden.
+   parallel laufenden Codex-Sessions ggf. ambig — dann lieber `--thread`,
+   `--cwd` oder den Multi-Session-Modus
+   ([siehe oben](#mehrere-codex-sessions-im-selben-verzeichnis))
+   verwenden.
 
 ## Portabilität und statischer Build
 

@@ -3,12 +3,13 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, anyhow};
 
 use crate::protocol::RolloutItem;
 
+#[derive(Clone)]
 pub enum Selector {
     ThreadId(String),
     Cwd(PathBuf),
@@ -65,6 +66,70 @@ pub fn resolve(sel: &Selector, codex_home: &Path) -> Result<PathBuf> {
             ))
         }
         Selector::MostRecent => Ok(files.into_iter().next().unwrap().0),
+    }
+}
+
+/// Returns ALL rollout files matching the selector that are newer than `max_age`.
+/// Used by multi-session mode; returns paths sorted newest first by mtime.
+///
+/// For `Selector::ThreadId` and `Selector::MostRecent`, this still returns at
+/// most one path (those selectors are inherently single-target).
+pub fn resolve_all(
+    sel: &Selector,
+    codex_home: &Path,
+    max_age: Duration,
+) -> Result<Vec<PathBuf>> {
+    let sessions = codex_home.join("sessions");
+    if !sessions.is_dir() {
+        return Err(anyhow!(
+            "sessions directory not found: {}",
+            sessions.display()
+        ));
+    }
+    let all_files = list_rollouts(&sessions)?;
+    let cutoff = SystemTime::now()
+        .checked_sub(max_age)
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let fresh: Vec<_> = all_files
+        .into_iter()
+        .filter(|(_, mtime)| *mtime >= cutoff)
+        .collect();
+
+    match sel {
+        Selector::ThreadId(_) | Selector::MostRecent => {
+            // Reuse single-session resolve so behavior stays consistent.
+            // (max_age is intentionally not applied here — these selectors
+            //  ask for a specific session, not "active sessions".)
+            match resolve(sel, codex_home) {
+                Ok(p) => Ok(vec![p]),
+                Err(e) => Err(e),
+            }
+        }
+        Selector::Cwd(target) => {
+            if fresh.is_empty() {
+                return Err(anyhow!(
+                    "no active rollout files under {} (within max-age window)",
+                    sessions.display()
+                ));
+            }
+            let target = target.canonicalize().unwrap_or_else(|_| target.clone());
+            let mut matches: Vec<PathBuf> = Vec::new();
+            for (path, _) in fresh {
+                if let Ok(Some(meta_cwd)) = read_session_cwd(&path)
+                    && Path::new(&meta_cwd) == target
+                {
+                    matches.push(path);
+                }
+            }
+            if matches.is_empty() {
+                Err(anyhow!(
+                    "no active rollout whose session cwd matches {}",
+                    target.display()
+                ))
+            } else {
+                Ok(matches)
+            }
+        }
     }
 }
 
