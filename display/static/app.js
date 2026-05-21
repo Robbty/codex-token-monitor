@@ -288,71 +288,33 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
     toastTimer = setTimeout(() => el.classList.remove("toast--visible"), 2500);
   }
 
-  // -- help modal --
+  // -- help: open the README in a separate, draggable OS window --
   //
-  // Implementation note: we use event delegation on `document` so that the
-  // close-handlers work even if the modal nodes were not in the DOM at the
-  // time the script first ran (defer + IIFE can otherwise create timing
-  // surprises). Same for the help button.
+  // Chromium's --app mode propagates the borderless app-window style to
+  // popups, so window.open() with popup=yes gives us a standalone window
+  // without URL bar — drag-anywhere, resizable, can sit next to the main
+  // window. Using a named target means clicking 📖 again just focuses the
+  // existing help window instead of opening a second copy.
+  let helpWin = null;
 
-  let readmeLoaded = false;
-
-  function $modal()      { return document.getElementById("modal"); }
-  function $modalBody()  { return document.getElementById("modal-body"); }
-
-  async function openHelp() {
-    const modal = $modal();
-    const modalBody = $modalBody();
-    if (!modal || !modalBody) return;
-
-    if (!readmeLoaded) {
-      modalBody.innerHTML = `<p style="color: var(--fg-dim)">Lade README…</p>`;
-      try {
-        const r = await fetch("/readme");
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const md = await r.text();
-        if (typeof marked !== "undefined" && typeof marked.parse === "function") {
-          modalBody.innerHTML = marked.parse(md, { gfm: true, breaks: false });
-        } else {
-          const pre = document.createElement("pre");
-          pre.textContent = md;
-          modalBody.innerHTML = "";
-          modalBody.appendChild(pre);
-        }
-        readmeLoaded = true;
-      } catch (e) {
-        modalBody.innerHTML =
-          `<p><strong>Konnte README nicht laden.</strong></p>` +
-          `<p style="color: var(--fg-dim)">Fehler: ${String(e.message || e)}</p>` +
-          `<p>Inhalt liegt unter <code>display/README.md</code>.</p>`;
-      }
+  function openHelp() {
+    if (helpWin && !helpWin.closed) {
+      helpWin.focus();
+      return;
     }
-    modal.classList.remove("hidden");
+    helpWin = window.open(
+      "/help",
+      "codex-token-help",
+      "popup=yes,width=760,height=820,resizable=yes,scrollbars=yes"
+    );
+    if (helpWin) helpWin.focus();
   }
 
-  function closeHelp() {
-    const modal = $modal();
-    if (modal) modal.classList.add("hidden");
-  }
-
-  // Click delegation: open / close
   document.addEventListener("click", (e) => {
     if (e.target.closest("#help-btn")) {
       e.preventDefault();
       openHelp();
-      return;
     }
-    if (e.target.closest("[data-modal-close]")) {
-      e.preventDefault();
-      closeHelp();
-    }
-  });
-
-  // Esc closes the modal
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    const modal = $modal();
-    if (modal && !modal.classList.contains("hidden")) closeHelp();
   });
 
   initScope().then(connect);

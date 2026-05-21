@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Codex Token Monitor — Bedienungsanleitung</title>
+  <link rel="stylesheet" href="/static/app.css" />
+  <script src="/static/marked.min.js" defer></script>
+  <style>
+    /* Help window is a stand-alone OS window; override layout to be
+       a single scrollable column instead of the dashboard grid. */
+    body { background: var(--bg); padding: 0; overflow-y: auto; }
+    .helpwrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 22px 28px 40px;
+    }
+  </style>
+</head>
+<body>
+  <div class="helpwrap">
+    <main id="content" class="markdown">
+      <p style="color: var(--fg-dim)">Lade README…</p>
+    </main>
+  </div>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    const el = document.getElementById("content");
+    try {
+      const r = await fetch("/readme");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const md = await r.text();
+      if (typeof marked !== "undefined" && typeof marked.parse === "function") {
+        el.innerHTML = marked.parse(md, { gfm: true, breaks: false });
+      } else {
+        const pre = document.createElement("pre");
+        pre.textContent = md;
+        el.innerHTML = "";
+        el.appendChild(pre);
+      }
+      document.title = "Codex Token Monitor — Bedienungsanleitung";
+    } catch (e) {
+      el.innerHTML =
+        "<p><strong>Konnte README nicht laden.</strong></p>" +
+        "<p style=\"color: var(--fg-dim)\">Fehler: " +
+        String(e.message || e) + "</p>";
+    }
+  });
+  </script>
+</body>
+</html>

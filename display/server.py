@@ -249,6 +249,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json_ok(extra={"scope": _scope})
         elif url.path == "/readme":
             self._serve_file(HERE / "README.md", "text/markdown; charset=utf-8")
+        elif url.path == "/help":
+            self._serve_file(HERE / "help.html", "text/html; charset=utf-8")
         else:
             self.send_error(404, "not found")
 
