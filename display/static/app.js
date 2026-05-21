@@ -127,13 +127,12 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
 
     const bar = rowEl.querySelector(".bar");
     bar.title =
-      `${used.toLocaleString("de-DE")} Token verbraucht\n` +
-      `${free.toLocaleString("de-DE")} Token frei\n` +
-      `${ctx.toLocaleString("de-DE")} Token Kontextfenster gesamt\n` +
-      `→ ${pctUsed}% belegt · ${pctLeft}% frei`;
+      `${free.toLocaleString("de-DE")} Token frei (${pctLeft}%)\n` +
+      `${used.toLocaleString("de-DE")} Token verbraucht (${pctUsed}%)\n` +
+      `${ctx.toLocaleString("de-DE")} Token Kontextfenster gesamt`;
 
-    rowEl.querySelector(".used").textContent = fmtTokens(used);
     rowEl.querySelector(".free").textContent = fmtTokens(free);
+    rowEl.querySelector(".pctfree").textContent = pctLeft;
 
     const cwdEl = rowEl.querySelector(".cwd");
     cwdEl.textContent = snap.session_cwd ?? "(unbekannt)";
@@ -290,23 +289,31 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
   }
 
   // -- help modal --
+  //
+  // Implementation note: we use event delegation on `document` so that the
+  // close-handlers work even if the modal nodes were not in the DOM at the
+  // time the script first ran (defer + IIFE can otherwise create timing
+  // surprises). Same for the help button.
 
-  const modal = document.getElementById("modal");
-  const modalBody = document.getElementById("modal-body");
-  const helpBtn = document.getElementById("help-btn");
   let readmeLoaded = false;
 
+  function $modal()      { return document.getElementById("modal"); }
+  function $modalBody()  { return document.getElementById("modal-body"); }
+
   async function openHelp() {
+    const modal = $modal();
+    const modalBody = $modalBody();
+    if (!modal || !modalBody) return;
+
     if (!readmeLoaded) {
+      modalBody.innerHTML = `<p style="color: var(--fg-dim)">Lade README…</p>`;
       try {
         const r = await fetch("/readme");
-        if (!r.ok) throw new Error(`${r.status}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const md = await r.text();
-        if (typeof marked !== "undefined") {
-          marked.setOptions({ breaks: false, gfm: true });
-          modalBody.innerHTML = marked.parse(md);
+        if (typeof marked !== "undefined" && typeof marked.parse === "function") {
+          modalBody.innerHTML = marked.parse(md, { gfm: true, breaks: false });
         } else {
-          // Fallback: show raw markdown if marked didn't load
           const pre = document.createElement("pre");
           pre.textContent = md;
           modalBody.innerHTML = "";
@@ -315,23 +322,37 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
         readmeLoaded = true;
       } catch (e) {
         modalBody.innerHTML =
-          `<p>Konnte README nicht laden: ${String(e)}</p>` +
-          `<p>Schau in <code>display/README.md</code>.</p>`;
+          `<p><strong>Konnte README nicht laden.</strong></p>` +
+          `<p style="color: var(--fg-dim)">Fehler: ${String(e.message || e)}</p>` +
+          `<p>Inhalt liegt unter <code>display/README.md</code>.</p>`;
       }
     }
     modal.classList.remove("hidden");
   }
 
   function closeHelp() {
-    modal.classList.add("hidden");
+    const modal = $modal();
+    if (modal) modal.classList.add("hidden");
   }
 
-  helpBtn.addEventListener("click", openHelp);
-  modal.querySelectorAll("[data-modal-close]").forEach((el) =>
-    el.addEventListener("click", closeHelp)
-  );
+  // Click delegation: open / close
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#help-btn")) {
+      e.preventDefault();
+      openHelp();
+      return;
+    }
+    if (e.target.closest("[data-modal-close]")) {
+      e.preventDefault();
+      closeHelp();
+    }
+  });
+
+  // Esc closes the modal
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !modal.classList.contains("hidden")) closeHelp();
+    if (e.key !== "Escape") return;
+    const modal = $modal();
+    if (modal && !modal.classList.contains("hidden")) closeHelp();
   });
 
   initScope().then(connect);

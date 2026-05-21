@@ -102,15 +102,14 @@ html, body {
   position: absolute;
   inset: 0;                /* always full bar width */
   /* Fixed gradient anchored to the bar itself, so position-on-bar
-   * determines the colour — left stays green, right turns red.
+   * determines the colour — left stays green, right ends in violet.
    * The bar's visible portion is controlled via clip-path. */
   background: linear-gradient(
     90deg,
-    hsl(132, 56%, 42%) 0%,
-    hsl(95,  58%, 45%) 35%,
-    hsl(55,  72%, 50%) 60%,
-    hsl(28,  82%, 52%) 80%,
-    hsl(0,   78%, 47%) 100%
+    hsl(132, 60%, 44%)   0%,    /* grün */
+    hsl(50,  90%, 52%)  35%,    /* gelb */
+    hsl(0,   82%, 52%)  70%,    /* rot */
+    hsl(285, 65%, 55%) 100%     /* violett */
   );
   clip-path: inset(0 100% 0 0);   /* default: empty bar */
   transition: clip-path 0.35s ease;
@@ -305,8 +304,10 @@ html, body {
 
 .modal__panel {
   position: relative;
+  z-index: 1;                /* above backdrop in the same stacking context */
   width: min(94vw, 720px);
-  max-height: 88vh;
+  height: min(88vh, 720px);  /* fixed, big enough for the README */
+  min-height: 360px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -345,6 +346,8 @@ html, body {
 }
 
 .modal__body {
+  flex: 1 1 auto;            /* fill the remaining panel height */
+  min-height: 0;             /* allow children to shrink for overflow */
   padding: 18px 22px 22px;
   overflow-y: auto;
   color: var(--fg);
