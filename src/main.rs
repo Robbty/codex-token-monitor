@@ -57,10 +57,11 @@ struct Cli {
     #[arg(long, value_name = "SECS", requires = "wait")]
     wait_timeout: Option<u64>,
 
-    /// Multi-session mode: with --cwd, follow ALL active matching rollouts
-    /// instead of just the newest one. Each session's output is prefixed
-    /// with a "=== session <uuid> ===" header.
-    #[arg(long, requires = "cwd")]
+    /// Multi-session mode: follow ALL active matching rollouts instead of
+    /// just the newest one. With --cwd, scoped to that directory; without
+    /// --cwd, scans system-wide across every Codex session. Each session's
+    /// output is prefixed with a "=== session <uuid> ===" header.
+    #[arg(long)]
     all: bool,
 
     /// Maximum age in minutes a rollout's mtime can have to count as "active".
@@ -107,6 +108,9 @@ fn build_selector(cli: &Cli) -> Result<Selector> {
             cwd
         };
         Ok(Selector::Cwd(abs))
+    } else if cli.all {
+        // --all without --cwd: system-wide multi-session mode.
+        Ok(Selector::All)
     } else {
         Ok(Selector::MostRecent)
     }

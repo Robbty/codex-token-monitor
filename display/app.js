@@ -199,9 +199,30 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
 
     countEl.textContent = `${sessions.size} aktiv`;
     emptyEl.classList.toggle("hidden", sessions.size > 0);
-    if (sessions.size > 0) {
-      const firstCwd = sorted[0]?.session_cwd;
-      if (firstCwd) cwdEl.textContent = firstCwd;
+    // Topbar scope label is set by initScope() at startup and only overridden
+    // here in scoped (single-project) mode where the cwd is fixed.
+    if (scope !== null && sessions.size > 0) {
+      cwdEl.textContent = scope;
+      cwdEl.title = scope;
+    }
+  }
+
+  // Server tells us whether we're scoped to a single project or system-wide.
+  let scope = null;
+  async function initScope() {
+    try {
+      const r = await fetch("/scope");
+      const data = await r.json();
+      scope = data.scope ?? null;
+      if (scope === null) {
+        cwdEl.textContent = "Alle Projekte";
+        cwdEl.title = "PC-weite Übersicht aller laufenden Codex-Sessions";
+      } else {
+        cwdEl.textContent = scope;
+        cwdEl.title = scope;
+      }
+    } catch {
+      cwdEl.textContent = "?";
     }
   }
 
@@ -270,5 +291,5 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
     toastTimer = setTimeout(() => el.classList.remove("toast--visible"), 2500);
   }
 
-  connect();
+  initScope().then(connect);
 })();

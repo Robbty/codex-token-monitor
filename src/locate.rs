@@ -14,6 +14,8 @@ pub enum Selector {
     ThreadId(String),
     Cwd(PathBuf),
     MostRecent,
+    /// System-wide: every rollout, no cwd filter.
+    All,
 }
 
 pub fn codex_home() -> Result<PathBuf> {
@@ -71,7 +73,7 @@ pub fn resolve_filtered(
                 target.display()
             ))
         }
-        Selector::MostRecent => {
+        Selector::MostRecent | Selector::All => {
             for (path, _) in files {
                 if !require_open || crate::proc::is_held_open(&path) {
                     return Ok(path);
@@ -144,6 +146,23 @@ pub fn resolve_all(
                 Err(anyhow!(
                     "no active rollout whose session cwd matches {}",
                     target.display()
+                ))
+            } else {
+                Ok(matches)
+            }
+        }
+        Selector::All => {
+            // System-wide: every rollout that passes max_age and require_open.
+            // No cwd lookup needed, so this is much cheaper than the Cwd branch.
+            let matches: Vec<PathBuf> = fresh
+                .into_iter()
+                .filter(|(p, _)| !require_open || crate::proc::is_held_open(p))
+                .map(|(p, _)| p)
+                .collect();
+            if matches.is_empty() {
+                Err(anyhow!(
+                    "no active rollout files under {} (within max-age window)",
+                    sessions.display()
                 ))
             } else {
                 Ok(matches)

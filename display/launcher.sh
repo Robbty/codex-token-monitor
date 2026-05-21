@@ -2,8 +2,10 @@
 # codex-token-display launcher
 #
 # Usage:
-#   ./launcher.sh /pfad/zum/projekt              # standardport 8765
+#   ./launcher.sh                                 # system-wide view (all Codex sessions)
+#   ./launcher.sh /pfad/zum/projekt               # nur eine Projekt-Verzeichnis
 #   ./launcher.sh /pfad/zum/projekt --port 8888
+#   ./launcher.sh --port 8888                     # system-wide auf eigenem Port
 #
 # Starts the Python helper-server in the background, then opens a
 # Chromium/Chrome window in --app mode pointing at it. Cleans up the
@@ -13,15 +15,14 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-PROJECT_DIR="${1:-}"
-shift || true
-
-if [[ -z "$PROJECT_DIR" ]]; then
-  echo "Usage: $0 <project_dir> [--port N]" >&2
-  exit 2
+# First positional arg, if it is not a flag, is the project directory.
+PROJECT_DIR=""
+if [[ $# -gt 0 && "$1" != --* ]]; then
+  PROJECT_DIR="$1"
+  shift
 fi
 
-if [[ ! -d "$PROJECT_DIR" ]]; then
+if [[ -n "$PROJECT_DIR" && ! -d "$PROJECT_DIR" ]]; then
   echo "Error: $PROJECT_DIR is not a directory" >&2
   exit 2
 fi
@@ -67,16 +68,26 @@ if [[ -z "$TOKENS_BIN" ]]; then
   fi
 fi
 
-PROJECT_ABS="$(cd "$PROJECT_DIR" && pwd)"
+if [[ -n "$PROJECT_DIR" ]]; then
+  PROJECT_ABS="$(cd "$PROJECT_DIR" && pwd)"
+  SCOPE_LABEL="$PROJECT_ABS"
+else
+  PROJECT_ABS=""
+  SCOPE_LABEL="system-wide (alle Projekte)"
+fi
 
-echo "[launcher] project    : $PROJECT_ABS"
+echo "[launcher] scope      : $SCOPE_LABEL"
 echo "[launcher] port       : $PORT"
 echo "[launcher] codex-tokens: $TOKENS_BIN"
 echo "[launcher] browser    : $BROWSER"
 echo
 
 # Start server in background and trap its PID for cleanup.
-python3 "$HERE/server.py" "$PROJECT_ABS" --port "$PORT" --codex-tokens-bin "$TOKENS_BIN" &
+if [[ -n "$PROJECT_ABS" ]]; then
+  python3 "$HERE/server.py" "$PROJECT_ABS" --port "$PORT" --codex-tokens-bin "$TOKENS_BIN" &
+else
+  python3 "$HERE/server.py" --port "$PORT" --codex-tokens-bin "$TOKENS_BIN" &
+fi
 SERVER_PID=$!
 
 cleanup() {

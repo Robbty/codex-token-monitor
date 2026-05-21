@@ -115,9 +115,10 @@ codex-tokens [OPTIONS]
       --wait          Wartet, bis eine passende Rollout-Datei erscheint, statt sofort abzubrechen.
                       Damit kann der Monitor vor Codex gestartet werden.
       --wait-timeout SECS  Sekunden-Limit für --wait (Default: unbegrenzt).
-      --all           Multi-Session: mit --cwd ALLE aktiven passenden Sessions gleichzeitig
-                      verfolgen (statt nur der neuesten). Jeder Block wird mit
-                      "=== session <uuid> ===" markiert.
+      --all           Multi-Session: ALLE aktiven Sessions gleichzeitig verfolgen.
+                      Mit --cwd auf ein Projektverzeichnis eingegrenzt; ohne --cwd
+                      system-weit (jede Codex-Session auf dem Rechner). Jeder Block
+                      wird mit "=== session <uuid> ===" markiert.
       --max-age MINUTES    Nur mit --all: Rollouts, die länger nicht beschrieben wurden,
                            gelten als nicht-aktiv (Default: 5).
       --watch-new     Nur mit --all --follow: scannt alle 5 s nach neu aufgetauchten Rollouts
@@ -445,18 +446,29 @@ eine native App.
 
 ### Starten
 
+**System-weit** — alle Codex-Sessions auf dem Rechner:
+
 ```bash
 cd /pfad/zu/codex-token-monitor
+./display/launcher.sh
+```
+
+**Auf ein Projektverzeichnis eingegrenzt:**
+
+```bash
 ./display/launcher.sh /pfad/zu/deinem-projekt
 ```
 
 Es öffnet sich ein schmales Fenster (~520×640 px), das alle aktiven
-Codex-Sessions im angegebenen Projektverzeichnis listet. Schließe das
-Fenster oder drücke `Strg+C` im Launcher-Terminal, um sauber zu beenden.
+Codex-Sessions auflistet. Im system-weiten Modus zeigt jede Karte den
+zugehörigen `cwd` an, sodass du Sessions verschiedener Projekte
+unterscheiden kannst. Schließe das Fenster oder drücke `Strg+C` im
+Launcher-Terminal, um sauber zu beenden.
 
 Optional ein anderer Port:
 
 ```bash
+./display/launcher.sh --port 8888
 ./display/launcher.sh /pfad/zu/deinem-projekt --port 8888
 ```
 

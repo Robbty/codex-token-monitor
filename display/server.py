@@ -36,6 +36,10 @@ SSE_HEARTBEAT_SEC = 10
 
 # --- shared state ---------------------------------------------------------
 
+# Scope label: None for system-wide, otherwise the absolute path the user
+# pinned the display to. Exposed via /scope so the UI can adjust its header.
+_scope: str | None = None
+
 # Latest snapshot per session_id. The SSE handler sends the full map on
 # connect and individual updates afterwards.
 _state_lock = threading.Lock()
@@ -57,10 +61,11 @@ def _broadcast(event: dict) -> None:
 
 # --- codex-tokens reader thread -----------------------------------------
 
-def _spawn_tokens(cwd_to_watch: str, codex_tokens_bin: str) -> subprocess.Popen:
-    cmd = [
-        codex_tokens_bin,
-        "--cwd", cwd_to_watch,
+def _spawn_tokens(cwd_to_watch: str | None, codex_tokens_bin: str) -> subprocess.Popen:
+    cmd = [codex_tokens_bin]
+    if cwd_to_watch:
+        cmd += ["--cwd", cwd_to_watch]
+    cmd += [
         "--all",
         "--follow",
         "--watch-new",
@@ -79,7 +84,7 @@ def _spawn_tokens(cwd_to_watch: str, codex_tokens_bin: str) -> subprocess.Popen:
     )
 
 
-def _reader_thread(cwd_to_watch: str, codex_tokens_bin: str) -> None:
+def _reader_thread(cwd_to_watch: str | None, codex_tokens_bin: str) -> None:
     """Run codex-tokens, parse NDJSON, update state, broadcast diffs."""
     while True:
         try:
@@ -216,6 +221,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._serve_static(fname)
         elif url.path == "/events":
             self._serve_events()
+        elif url.path == "/scope":
+            self._json_ok(extra={"scope": _scope})
         else:
             self.send_error(404, "not found")
 
@@ -385,7 +392,12 @@ def main() -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="codex-token-display HTTP/SSE bridge")
-    parser.add_argument("cwd", help="Project directory to watch (passed to codex-tokens --cwd)")
+    parser.add_argument(
+        "cwd",
+        nargs="?",
+        default=None,
+        help="Project directory to watch (omit for system-wide view of all Codex sessions)",
+    )
     parser.add_argument(
         "--port",
         type=int,
@@ -397,9 +409,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not Path(args.cwd).is_dir():
+    if args.cwd is not None and not Path(args.cwd).is_dir():
         sys.stderr.write(f"[server] cwd does not exist: {args.cwd}\n")
         return 2
+
+    global _scope
+    _scope = str(Path(args.cwd).resolve()) if args.cwd else None
 
     # Background workers.
     t1 = threading.Thread(
