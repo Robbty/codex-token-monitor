@@ -32,29 +32,8 @@
     return `${h}:${String(m).padStart(2, "0")}h`;
   };
 
-  const colorForPercent = (pctUsed) => {
-    // 0 → green, 60 → yellow, 90+ → red. Linear interpolation in HSL.
-    // Green ≈ hsl(132, 56%, 41%); yellow ≈ hsl(45, 67%, 50%); red ≈ hsl(355, 75%, 47%).
-    const stops = [
-      { p: 0, h: 132, s: 56, l: 41 },
-      { p: 60, h: 45, s: 67, l: 50 },
-      { p: 90, h: 355, s: 75, l: 47 },
-      { p: 100, h: 0, s: 80, l: 45 },
-    ];
-    const pct = Math.max(0, Math.min(100, pctUsed));
-    let a = stops[0], b = stops[stops.length - 1];
-    for (let i = 0; i < stops.length - 1; i++) {
-      if (pct >= stops[i].p && pct <= stops[i + 1].p) {
-        a = stops[i]; b = stops[i + 1];
-        break;
-      }
-    }
-    const t = (pct - a.p) / Math.max(1, (b.p - a.p));
-    const h = a.h + (b.h - a.h) * t;
-    const s = a.s + (b.s - a.s) * t;
-    const l = a.l + (b.l - a.l) * t;
-    return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
-  };
+  // The bar's colour gradient is defined in CSS (anchored to the full bar
+  // width); JS only adjusts the visible-portion clip.
 
   // -- rendering --
 
@@ -129,8 +108,10 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
     const free = Math.max(0, ctx - used);
 
     const fill = rowEl.querySelector(".bar__fill");
-    fill.style.width = `${pctUsed}%`;
-    fill.style.background = colorForPercent(pctUsed);
+    // Reveal the leftmost pctUsed% of the fixed gradient; the rest stays
+    // hidden, so the colour at each x-pixel always matches its position on
+    // the bar (green on the left, red at the very right).
+    fill.style.clipPath = `inset(0 ${(100 - pctUsed).toFixed(2)}% 0 0)`;
 
     const bar = rowEl.querySelector(".bar");
     bar.title = `${used.toLocaleString("de-DE")} / ${ctx.toLocaleString("de-DE")} Token verbraucht — ${pctLeft}% Kontext frei`;

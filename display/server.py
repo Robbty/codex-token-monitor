@@ -339,20 +339,76 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not cwd:
             self.send_error(400, "missing 'cwd'")
             return
-        # Best-effort: try to focus a window whose title contains the cwd path
-        # (terminals typically embed the cwd in the title bar). Falls back to
-        # the basename for shorter titles like "tmp — peter@host".
-        candidates = [cwd, Path(cwd).name]
-        for pattern in candidates:
-            r = subprocess.run(
-                ["wmctrl", "-a", pattern],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+
+        cwd_basename = Path(cwd).name
+
+        # Enumerate all windows with their WM_CLASS via `wmctrl -lx`.
+        # Output format per line:
+        #   <window_id>  <desktop>  <wm_class>  <hostname>  <title>
+        try:
+            result = subprocess.run(
+                ["wmctrl", "-lx"],
+                capture_output=True,
+                text=True,
+                check=False,
             )
-            if r.returncode == 0:
-                self._json_ok()
-                return
-        self._json_ok(extra={"warning": "no matching window found (need wmctrl + window title containing the cwd)"})
+        except FileNotFoundError:
+            self.send_error(500, "wmctrl not installed")
+            return
+        if result.returncode != 0:
+            self._json_ok(extra={"warning": "wmctrl -lx failed"})
+            return
+
+        # Score candidates: IDE/editor > terminal > anything else; file
+        # managers are excluded so that an already-open file-manager window
+        # for the same cwd does not steal the match from the IDE window.
+        ide_classes = (
+            "code", "cursor", "windsurf", "vscodium", "code-oss",
+            "jetbrains", "intellij", "pycharm", "webstorm", "phpstorm",
+            "goland", "rustrover", "rider", "datagrip", "android-studio",
+            "sublime_text", "atom", "zed",
+        )
+        term_classes = (
+            "terminal", "alacritty", "kitty", "konsole", "xterm",
+            "wezterm", "tilix", "guake", "tabby", "rxvt", "urxvt",
+            "gnome-terminal", "xfce4-terminal", "qterminal", "foot",
+        )
+        file_manager_classes = (
+            "nautilus", "dolphin", "thunar", "nemo", "pcmanfm",
+            "caja", "spacefm", "krusader",
+        )
+
+        candidates: list[tuple[int, str, str]] = []  # (score, window_id, title)
+        for line in result.stdout.splitlines():
+            parts = line.split(None, 4)
+            if len(parts) < 5:
+                continue
+            win_id, _desktop, wm_class, _host, title = parts
+            if cwd not in title and cwd_basename not in title:
+                continue
+            cls_lower = wm_class.lower()
+            if any(fm in cls_lower for fm in file_manager_classes):
+                continue  # explicitly skip file managers
+            score = 1  # generic title match
+            if any(ide in cls_lower for ide in ide_classes):
+                score = 10
+            elif any(t in cls_lower for t in term_classes):
+                score = 5
+            candidates.append((score, win_id, title))
+
+        if not candidates:
+            self._json_ok(extra={"warning": "no matching IDE/terminal window found"})
+            return
+
+        candidates.sort(key=lambda c: c[0], reverse=True)
+        _, win_id, _ = candidates[0]
+        subprocess.run(
+            ["wmctrl", "-ia", win_id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        self._json_ok()
 
     def _handle_copy(self, body: dict) -> None:
         text = body.get("text", "")

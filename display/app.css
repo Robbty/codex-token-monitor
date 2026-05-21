@@ -100,9 +100,20 @@ html, body {
 
 .bar__fill {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  transition: width 0.35s ease, background 0.5s ease;
+  inset: 0;                /* always full bar width */
+  /* Fixed gradient anchored to the bar itself, so position-on-bar
+   * determines the colour — left stays green, right turns red.
+   * The bar's visible portion is controlled via clip-path. */
+  background: linear-gradient(
+    90deg,
+    hsl(132, 56%, 42%) 0%,
+    hsl(95,  58%, 45%) 35%,
+    hsl(55,  72%, 50%) 60%,
+    hsl(28,  82%, 52%) 80%,
+    hsl(0,   78%, 47%) 100%
+  );
+  clip-path: inset(0 100% 0 0);   /* default: empty bar */
+  transition: clip-path 0.35s ease;
   border-radius: 3px 0 0 3px;
 }
 
