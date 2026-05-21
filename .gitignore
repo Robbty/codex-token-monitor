@@ -5,3 +5,7 @@
 
 # Generated docs (built from README.md)
 README.pdf
+
+# Python bytecode
+__pycache__/
+*.pyc
