@@ -289,5 +289,50 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
     toastTimer = setTimeout(() => el.classList.remove("toast--visible"), 2500);
   }
 
+  // -- help modal --
+
+  const modal = document.getElementById("modal");
+  const modalBody = document.getElementById("modal-body");
+  const helpBtn = document.getElementById("help-btn");
+  let readmeLoaded = false;
+
+  async function openHelp() {
+    if (!readmeLoaded) {
+      try {
+        const r = await fetch("/readme");
+        if (!r.ok) throw new Error(`${r.status}`);
+        const md = await r.text();
+        if (typeof marked !== "undefined") {
+          marked.setOptions({ breaks: false, gfm: true });
+          modalBody.innerHTML = marked.parse(md);
+        } else {
+          // Fallback: show raw markdown if marked didn't load
+          const pre = document.createElement("pre");
+          pre.textContent = md;
+          modalBody.innerHTML = "";
+          modalBody.appendChild(pre);
+        }
+        readmeLoaded = true;
+      } catch (e) {
+        modalBody.innerHTML =
+          `<p>Konnte README nicht laden: ${String(e)}</p>` +
+          `<p>Schau in <code>display/README.md</code>.</p>`;
+      }
+    }
+    modal.classList.remove("hidden");
+  }
+
+  function closeHelp() {
+    modal.classList.add("hidden");
+  }
+
+  helpBtn.addEventListener("click", openHelp);
+  modal.querySelectorAll("[data-modal-close]").forEach((el) =>
+    el.addEventListener("click", closeHelp)
+  );
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !modal.classList.contains("hidden")) closeHelp();
+  });
+
   initScope().then(connect);
 })();

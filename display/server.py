@@ -247,6 +247,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._serve_events()
         elif url.path == "/scope":
             self._json_ok(extra={"scope": _scope})
+        elif url.path == "/readme":
+            self._serve_file(HERE / "README.md", "text/markdown; charset=utf-8")
         else:
             self.send_error(404, "not found")
 
@@ -283,8 +285,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _serve_static(self, fname: str) -> None:
-        safe = HERE / fname
-        if not safe.resolve().is_relative_to(HERE):
+        static_root = HERE / "static"
+        safe = static_root / fname
+        if not safe.resolve().is_relative_to(static_root):
             self.send_error(403)
             return
         ctype = "application/octet-stream"
@@ -294,6 +297,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ctype = "text/css; charset=utf-8"
         elif fname.endswith(".html"):
             ctype = "text/html; charset=utf-8"
+        elif fname.endswith(".md"):
+            ctype = "text/markdown; charset=utf-8"
         self._serve_file(safe, ctype)
 
     def _serve_events(self) -> None:

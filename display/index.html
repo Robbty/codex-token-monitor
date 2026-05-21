@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Codex Token Monitor</title>
   <link rel="stylesheet" href="/static/app.css" />
+  <script src="/static/marked.min.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -12,9 +13,21 @@
     <div class="topbar__meta">
       <span id="count">0 aktiv</span>
       <span id="cwd" title="Beobachtetes Projektverzeichnis"></span>
+      <button id="help-btn" class="help-btn" title="Bedienungsanleitung anzeigen">📖</button>
       <span id="conn" class="conn conn--disconnected" title="Verbindung zum Server">●</span>
     </div>
   </header>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal__backdrop" data-modal-close></div>
+    <div class="modal__panel">
+      <div class="modal__header">
+        <span id="modal-title" class="modal__title">Bedienungsanleitung</span>
+        <button class="modal__close" data-modal-close title="Schließen (Esc)">✕</button>
+      </div>
+      <div id="modal-body" class="modal__body markdown"></div>
+    </div>
+  </div>
 
   <main id="sessions" class="sessions"></main>
 
@@ -54,6 +67,6 @@
     </article>
   </template>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js" defer></script>
 </body>
 </html>

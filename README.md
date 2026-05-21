@@ -489,20 +489,25 @@ Optional ein anderer Port:
 - **⌚ Idle-Timer**: Sekunden/Minuten seit dem letzten TokenCount-Event.
 - **Session-ID (gekürzt)**: Klick kopiert die vollständige UUID.
 - **📁** öffnet das `session_cwd` im Dateimanager (`xdg-open`).
-- **⚡** holt das passende Terminal-/IDE-Fenster nach vorne (per `wmctrl -a`
-  auf den `cwd`-Pfad oder Verzeichnisnamen — funktioniert mit den meisten
-  Standalone-Terminals; bei eingebetteten Terminals in VS Code/Cursor
-  kommt das IDE-Fenster in den Vordergrund).
+- **⚡** holt das passende Terminal-/IDE-Fenster nach vorne (per `wmctrl -lx`,
+  bevorzugt IDE-Klassen wie VS Code / Cursor / JetBrains, schließt
+  Dateimanager-Klassen explizit aus).
+- **📋** kopiert den absoluten Pfad zur Rollout-Datei
+  (`~/.codex/sessions/.../rollout-*.jsonl`) in die Zwischenablage.
 - **↻** kopiert einen Handover-Prompt in die Zwischenablage, den du in
   Codex einfügen kannst, um einen sauberen Session-Rollover auszulösen.
 
+In der Kopfzeile öffnet **📖** ein Modal mit dieser Bedienungsanleitung —
+gerendert direkt aus `display/README.md` mit `marked.js`.
+
 ### Anpassung
 
-- **Custom Handover-Prompt**: in `display/app.js` die Funktion
+- **Custom Handover-Prompt**: in `display/static/app.js` die Funktion
   `rolloverPrompt(snap)` editieren.
-- **Schwellen-/Farbverlauf** anpassen: in `display/app.js`
-  `colorForPercent(pctUsed)` — die `stops`-Liste enthält die
-  HSL-Stützpunkte.
+- **Farbverlauf des Balkens**: in `display/static/app.css` der Selektor
+  `.bar__fill` mit dem `linear-gradient(...)`.
+- **Hilfe-Text**: einfach `display/README.md` editieren — wird beim
+  nächsten 📖-Klick neu gerendert (oder im Fenster `Strg+Shift+R`).
 - **Mehrere Projekte gleichzeitig**: einfach mehrere `launcher.sh`-
   Instanzen mit verschiedenen `--port`-Werten starten.
 

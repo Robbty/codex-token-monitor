@@ -266,6 +266,188 @@ html, body {
 }
 .toast--visible { opacity: 1; }
 
+/* --- help button -------------------------------------------------------- */
+
+.help-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.help-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+/* --- modal -------------------------------------------------------------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.modal__panel {
+  position: relative;
+  width: min(94vw, 720px);
+  max-height: 88vh;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal__title {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.modal__close {
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+.modal__close:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.modal__body {
+  padding: 18px 22px 22px;
+  overflow-y: auto;
+  color: var(--fg);
+}
+
+/* --- markdown rendering inside .markdown ------------------------------ */
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 22px 0 8px;
+  color: var(--fg);
+  font-weight: 600;
+  line-height: 1.2;
+}
+.markdown h1 { font-size: 20px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.markdown h2 { font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-top: 26px; }
+.markdown h3 { font-size: 14px; }
+.markdown h4 { font-size: 13px; color: var(--fg-dim); }
+.markdown > *:first-child { margin-top: 0; }
+
+.markdown p,
+.markdown li {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fg);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 22px;
+  margin: 8px 0 12px;
+}
+.markdown li { margin: 3px 0; }
+.markdown li > p { margin: 0; }
+
+.markdown strong { color: var(--fg); font-weight: 600; }
+.markdown em { font-style: italic; color: var(--fg); }
+
+.markdown a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+}
+.markdown a:hover { border-bottom-style: solid; }
+
+.markdown code {
+  background: var(--bg);
+  color: #e6e9ef;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  font-size: 11.5px;
+}
+
+.markdown pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 10px 0 14px;
+}
+.markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+  color: #c8d0dd;
+}
+
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 16px;
+  font-size: 12.5px;
+}
+.markdown th,
+.markdown td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.markdown th {
+  background: var(--bg);
+  font-weight: 600;
+  color: var(--fg);
+}
+.markdown tbody tr:hover { background: var(--bg-hover); }
+
+.markdown blockquote {
+  border-left: 3px solid var(--border);
+  padding: 4px 12px;
+  margin: 10px 0;
+  color: var(--fg-dim);
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 20px 0;
+}
+
 /* --- scrollbar --- */
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
