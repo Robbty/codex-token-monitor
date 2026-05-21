@@ -418,6 +418,82 @@ Drei Modi, in dieser Priorität:
    ([siehe oben](#mehrere-codex-sessions-im-selben-verzeichnis))
    verwenden.
 
+## Display-App (Statusfenster ohne Browser-Chrome)
+
+Unter `display/` liegt ein kleines Statusfenster, das die laufenden
+Codex-Sessions eines Projektverzeichnisses in Echtzeit anzeigt — pro
+Session eine eigene Zeile mit horizontalem Auslastungs-Balken (Verlauf
+grün→gelb→rot), freier Token-Zahl, Idle-Timer und drei Action-Buttons.
+Geschlossene Sessions verschwinden automatisch.
+
+Architektur: ein Python-Helfer-Server (`server.py`, stdlib only)
+spawnt `codex-tokens --cwd … --all --follow --watch-new --require-open
+--json` als Subprozess und streamt die NDJSON-Snapshots per Server-Sent
+Events an das Browserfenster (`index.html` + `app.css` + `app.js`).
+Der Browser läuft im `--app=`-Modus ohne URL-Leiste und sieht aus wie
+eine native App.
+
+### Voraussetzungen
+
+- `python3` (Standard auf Linux/WSL2)
+- ein Chromium-basierter Browser (`chromium`, `google-chrome`, `brave-browser`, `microsoft-edge`)
+- `codex-tokens` installiert (siehe oben)
+- für die Action-Buttons:
+  - `xdg-open` (in jedem Linux-Desktop dabei) — für „📁 Verzeichnis öffnen"
+  - `wmctrl` (`sudo apt install wmctrl`) — für „⚡ Terminal fokussieren"
+  - `xclip` oder `wl-clipboard` — für „↻ Rollover-Prompt kopieren" und Session-ID-Klick
+
+### Starten
+
+```bash
+cd /pfad/zu/codex-token-monitor
+./display/launcher.sh /pfad/zu/deinem-projekt
+```
+
+Es öffnet sich ein schmales Fenster (~520×640 px), das alle aktiven
+Codex-Sessions im angegebenen Projektverzeichnis listet. Schließe das
+Fenster oder drücke `Strg+C` im Launcher-Terminal, um sauber zu beenden.
+
+Optional ein anderer Port:
+
+```bash
+./display/launcher.sh /pfad/zu/deinem-projekt --port 8888
+```
+
+### UI im Überblick
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│ ▮▮▮▮▮▮▮▮░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  198 k frei    │ ← horizontaler Bar
+│ codex-token-monitor/tmp                 ● ⌚ 0:42                │   (grün→gelb→rot)
+│ 019e315c-c8be · 30 k / 258 k · Σ 67 k    [📁] [⚡] [↻]           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- **Balken oben**: Füllung zeigt verbrauchten Kontext, Farbe fließend
+  grün → gelb → rot. Hover-Tooltip zeigt vollständige Token-Werte.
+- **Statuspunkt grün/grau**: Codex-Prozess aktiv vs. beendet (per
+  `/proc`-Check). Beendete Sessions werden ausgeblendet.
+- **⌚ Idle-Timer**: Sekunden/Minuten seit dem letzten TokenCount-Event.
+- **Session-ID (gekürzt)**: Klick kopiert die vollständige UUID.
+- **📁** öffnet das `session_cwd` im Dateimanager (`xdg-open`).
+- **⚡** holt das passende Terminal-/IDE-Fenster nach vorne (per `wmctrl -a`
+  auf den `cwd`-Pfad oder Verzeichnisnamen — funktioniert mit den meisten
+  Standalone-Terminals; bei eingebetteten Terminals in VS Code/Cursor
+  kommt das IDE-Fenster in den Vordergrund).
+- **↻** kopiert einen Handover-Prompt in die Zwischenablage, den du in
+  Codex einfügen kannst, um einen sauberen Session-Rollover auszulösen.
+
+### Anpassung
+
+- **Custom Handover-Prompt**: in `display/app.js` die Funktion
+  `rolloverPrompt(snap)` editieren.
+- **Schwellen-/Farbverlauf** anpassen: in `display/app.js`
+  `colorForPercent(pctUsed)` — die `stops`-Liste enthält die
+  HSL-Stützpunkte.
+- **Mehrere Projekte gleichzeitig**: einfach mehrere `launcher.sh`-
+  Instanzen mit verschiedenen `--port`-Werten starten.
+
 ## Portabilität und statischer Build
 
 Der Standard-Build mit `cargo build --release` erzeugt ein dynamisch gegen
