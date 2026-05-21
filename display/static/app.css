@@ -295,6 +295,10 @@ html, body {
   justify-content: center;
 }
 
+/* Higher-specificity override: ensures .modal.hidden actually hides,
+   even though the generic .hidden rule appears earlier in this file. */
+.modal.hidden { display: none; }
+
 .modal__backdrop {
   position: absolute;
   inset: 0;
