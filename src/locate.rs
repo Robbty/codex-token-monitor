@@ -24,7 +24,11 @@ pub fn codex_home() -> Result<PathBuf> {
     Ok(home.join(".codex"))
 }
 
-pub fn resolve(sel: &Selector, codex_home: &Path) -> Result<PathBuf> {
+pub fn resolve_filtered(
+    sel: &Selector,
+    codex_home: &Path,
+    require_open: bool,
+) -> Result<PathBuf> {
     let sessions = codex_home.join("sessions");
     if !sessions.is_dir() {
         return Err(anyhow!(
@@ -46,6 +50,7 @@ pub fn resolve(sel: &Selector, codex_home: &Path) -> Result<PathBuf> {
                     p.file_name()
                         .and_then(|n| n.to_str())
                         .is_some_and(|n| n.ends_with(&needle))
+                        && (!require_open || crate::proc::is_held_open(p))
                 })
                 .map(|(p, _)| p)
                 .ok_or_else(|| anyhow!("no rollout for thread id {id}"))
@@ -56,6 +61,7 @@ pub fn resolve(sel: &Selector, codex_home: &Path) -> Result<PathBuf> {
             for (path, _) in files {
                 if let Ok(Some(meta_cwd)) = read_session_cwd(&path)
                     && Path::new(&meta_cwd) == target
+                    && (!require_open || crate::proc::is_held_open(&path))
                 {
                     return Ok(path);
                 }
@@ -65,12 +71,23 @@ pub fn resolve(sel: &Selector, codex_home: &Path) -> Result<PathBuf> {
                 target.display()
             ))
         }
-        Selector::MostRecent => Ok(files.into_iter().next().unwrap().0),
+        Selector::MostRecent => {
+            for (path, _) in files {
+                if !require_open || crate::proc::is_held_open(&path) {
+                    return Ok(path);
+                }
+            }
+            Err(anyhow!("no open rollout files"))
+        }
     }
 }
 
 /// Returns ALL rollout files matching the selector that are newer than `max_age`.
 /// Used by multi-session mode; returns paths sorted newest first by mtime.
+///
+/// If `require_open` is true, an additional filter only keeps paths whose
+/// rollout file is currently held open by some process (= the Codex session
+/// is still alive). This makes the result independent of the mtime heuristic.
 ///
 /// For `Selector::ThreadId` and `Selector::MostRecent`, this still returns at
 /// most one path (those selectors are inherently single-target).
@@ -78,6 +95,7 @@ pub fn resolve_all(
     sel: &Selector,
     codex_home: &Path,
     max_age: Duration,
+    require_open: bool,
 ) -> Result<Vec<PathBuf>> {
     let sessions = codex_home.join("sessions");
     if !sessions.is_dir() {
@@ -100,7 +118,7 @@ pub fn resolve_all(
             // Reuse single-session resolve so behavior stays consistent.
             // (max_age is intentionally not applied here — these selectors
             //  ask for a specific session, not "active sessions".)
-            match resolve(sel, codex_home) {
+            match resolve_filtered(sel, codex_home, require_open) {
                 Ok(p) => Ok(vec![p]),
                 Err(e) => Err(e),
             }
@@ -117,6 +135,7 @@ pub fn resolve_all(
             for (path, _) in fresh {
                 if let Ok(Some(meta_cwd)) = read_session_cwd(&path)
                     && Path::new(&meta_cwd) == target
+                    && (!require_open || crate::proc::is_held_open(&path))
                 {
                     matches.push(path);
                 }

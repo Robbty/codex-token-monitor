@@ -1,4 +1,5 @@
 mod locate;
+mod proc;
 mod protocol;
 mod render;
 mod state;
@@ -71,6 +72,12 @@ struct Cli {
     /// new rollouts and start watching them too (poll every 5 seconds).
     #[arg(long, requires_all = ["all", "follow"])]
     watch_new: bool,
+
+    /// Only include rollouts whose file is currently held open by some
+    /// process (= Codex session is still alive). Linux/WSL2 only; on other
+    /// platforms or without /proc access this flag has no effect.
+    #[arg(long)]
+    require_open: bool,
 }
 
 fn main() -> Result<()> {
@@ -108,7 +115,13 @@ fn build_selector(cli: &Cli) -> Result<Selector> {
 // ─── Single-session path (unchanged behavior) ────────────────────────────────
 
 fn run_single_session(cli: &Cli, selector: &Selector, codex_home: &Path) -> Result<()> {
-    let rollout_path = resolve_with_optional_wait(selector, codex_home, cli.wait, cli.wait_timeout)?;
+    let rollout_path = resolve_with_optional_wait(
+        selector,
+        codex_home,
+        cli.wait,
+        cli.wait_timeout,
+        cli.require_open,
+    )?;
 
     if cli.locate {
         println!("{}", rollout_path.display());
@@ -137,15 +150,18 @@ fn run_single_session(cli: &Cli, selector: &Selector, codex_home: &Path) -> Resu
 
         if tail.follow {
             if !printed_initial && tail.passed_initial()? {
+                state.session_active = Some(proc::is_held_open(&rollout_path));
                 print_snapshot(&state, &format, /*multi*/ false)?;
                 printed_initial = true;
             } else if printed_initial && is_token_event {
+                state.session_active = Some(proc::is_held_open(&rollout_path));
                 print_snapshot(&state, &format, /*multi*/ false)?;
             }
         }
     }
 
     if !tail.follow {
+        state.session_active = Some(proc::is_held_open(&rollout_path));
         print_snapshot(&state, &format, /*multi*/ false)?;
     }
     Ok(())
@@ -156,16 +172,17 @@ fn resolve_with_optional_wait(
     codex_home: &Path,
     wait: bool,
     timeout_secs: Option<u64>,
+    require_open: bool,
 ) -> Result<PathBuf> {
     if !wait {
-        return locate::resolve(selector, codex_home);
+        return locate::resolve_filtered(selector, codex_home, require_open);
     }
 
     let deadline = timeout_secs.map(|s| Instant::now() + Duration::from_secs(s));
     let mut announced = false;
 
     loop {
-        match locate::resolve(selector, codex_home) {
+        match locate::resolve_filtered(selector, codex_home, require_open) {
             Ok(path) => return Ok(path),
             Err(err) => {
                 if let Some(d) = deadline
@@ -211,6 +228,7 @@ fn run_multi_session(cli: &Cli, selector: &Selector, codex_home: &Path) -> Resul
         max_age,
         cli.wait,
         cli.wait_timeout,
+        cli.require_open,
     )?;
 
     if cli.locate {
@@ -237,6 +255,7 @@ fn run_multi_session(cli: &Cli, selector: &Selector, codex_home: &Path) -> Resul
             selector.clone(),
             codex_home.to_path_buf(),
             max_age,
+            cli.require_open,
             tracked.clone(),
             tx.clone(),
         );
@@ -268,13 +287,15 @@ fn run_multi_session(cli: &Cli, selector: &Selector, codex_home: &Path) -> Resul
                 // initial drain, on every TokenCount event. In non-follow mode
                 // we wait for Closed and emit once at the end.
                 if cli.follow && printed_initial.contains(&key) && is_token_event {
+                    entry.session_active = Some(proc::is_held_open(&key));
                     print_snapshot(entry, &format, /*multi*/ true)?;
                 }
             }
             TailMsg::InitialDrained => {
                 if cli.follow && !printed_initial.contains(&key)
-                    && let Some(state) = states.get(&key)
+                    && let Some(state) = states.get_mut(&key)
                 {
+                    state.session_active = Some(proc::is_held_open(&key));
                     print_snapshot(state, &format, /*multi*/ true)?;
                     printed_initial.insert(key.clone());
                 }
@@ -289,7 +310,8 @@ fn run_multi_session(cli: &Cli, selector: &Selector, codex_home: &Path) -> Resul
                 }
                 active.insert(key.clone(), false);
                 // In non-follow mode the snapshot is emitted now (we've drained the file).
-                if !cli.follow && let Some(state) = states.get(&key) {
+                if !cli.follow && let Some(state) = states.get_mut(&key) {
+                    state.session_active = Some(proc::is_held_open(&key));
                     print_snapshot(state, &format, /*multi*/ true)?;
                 }
             }
@@ -305,16 +327,17 @@ fn resolve_all_with_optional_wait(
     max_age: Duration,
     wait: bool,
     timeout_secs: Option<u64>,
+    require_open: bool,
 ) -> Result<Vec<PathBuf>> {
     if !wait {
-        return locate::resolve_all(selector, codex_home, max_age);
+        return locate::resolve_all(selector, codex_home, max_age, require_open);
     }
 
     let deadline = timeout_secs.map(|s| Instant::now() + Duration::from_secs(s));
     let mut announced = false;
 
     loop {
-        match locate::resolve_all(selector, codex_home, max_age) {
+        match locate::resolve_all(selector, codex_home, max_age, require_open) {
             Ok(paths) if !paths.is_empty() => return Ok(paths),
             Ok(_) | Err(_) => {
                 if let Some(d) = deadline
@@ -384,6 +407,7 @@ fn spawn_discovery(
     selector: Selector,
     codex_home: PathBuf,
     max_age: Duration,
+    require_open: bool,
     initial: HashSet<TailKey>,
     tx: Sender<(TailKey, TailMsg)>,
 ) {
@@ -391,7 +415,7 @@ fn spawn_discovery(
         let mut tracked = initial;
         loop {
             thread::sleep(DISCOVERY_INTERVAL);
-            let paths = match locate::resolve_all(&selector, &codex_home, max_age) {
+            let paths = match locate::resolve_all(&selector, &codex_home, max_age, require_open) {
                 Ok(p) => p,
                 Err(_) => continue, // sessions dir might be empty/transient
             };

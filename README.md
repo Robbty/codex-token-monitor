@@ -122,6 +122,8 @@ codex-tokens [OPTIONS]
                            gelten als nicht-aktiv (Default: 5).
       --watch-new     Nur mit --all --follow: scannt alle 5 s nach neu aufgetauchten Rollouts
                       und hängt sie live in den Stream.
+      --require-open  Nur Rollouts, deren Datei aktuell von einem Prozess offen gehalten wird
+                      (= Codex-Session läuft noch). Linux/WSL2; kein Effekt auf anderen Systemen.
   -h, --help / -V, --version
 ```
 
@@ -214,6 +216,26 @@ codex-tokens --cwd --all --follow --watch-new --wait
 Damit kannst du den Monitor *vor* Codex starten und beliebig viele
 Codex-Instanzen nachträglich hinzustarten — sie erscheinen automatisch
 im Stream.
+
+### Nur tatsächlich laufende Sessions: `--require-open`
+
+Der `--max-age`-Filter ist eine Heuristik über die Datei-`mtime` — sie kann
+lange Denkpausen einer aktiven Session fälschlich als „nicht aktiv" werten.
+Eine präzisere Variante prüft per `/proc`, ob ein Prozess die Rollout-Datei
+aktuell **schreibend** geöffnet hält:
+
+```bash
+codex-tokens --cwd --all --follow --require-open --watch-new --wait
+```
+
+Eigenschaften:
+
+- Linux/WSL2-only (greift auf `/proc/<pid>/fdinfo/<n>`-Metadaten zu)
+- Sieht nur Schreib-Handles — andere `codex-tokens`-Instanzen, die die Datei
+  lesend tailen, werden korrekt ignoriert
+- Ausgabe enthält zusätzlich das Feld `session_active=true|false`
+- Funktioniert sowohl mit als auch ohne `--max-age` (oft kann man `--max-age`
+  weglassen, wenn `--require-open` aktiv ist)
 
 ### Filtern in Bash
 

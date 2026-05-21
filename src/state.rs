@@ -8,6 +8,10 @@ pub struct TokenState {
     pub rate_limits: Option<RateLimitSnapshot>,
     pub session_id: Option<String>,
     pub session_cwd: Option<String>,
+    /// `Some(true)` if a process currently holds the rollout file open;
+    /// `Some(false)` if not; `None` if the active-check could not run
+    /// (e.g. non-Linux or no /proc access).
+    pub session_active: Option<bool>,
 }
 
 impl TokenState {

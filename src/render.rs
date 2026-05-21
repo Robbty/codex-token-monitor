@@ -36,6 +36,9 @@ fn render_kv(s: &TokenState, multi: bool) -> String {
     if let Some(cwd) = &s.session_cwd {
         push_kv(&mut out, "session_cwd", cwd);
     }
+    if let Some(active) = s.session_active {
+        push_kv(&mut out, "session_active", if active { "true" } else { "false" });
+    }
 
     if let Some(info) = &s.info {
         if let Some(w) = info.model_context_window {
@@ -155,6 +158,7 @@ fn render_json(s: &TokenState) -> String {
     let v = json!({
         "session_id": s.session_id,
         "session_cwd": s.session_cwd,
+        "session_active": s.session_active,
         "context_window": s.context_window(),
         "percent_left": s.percent_left(),
         "percent_used": s.percent_left().map(|p| 100 - p),
