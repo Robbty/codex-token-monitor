@@ -85,6 +85,25 @@ Zwischenablage — praktisch für `codex-tokens --thread <UUID>`.
 Die Schwelle zum Rollover hängt vom Modell ab — als Faustregel bei ~80 % Verbrauch
 Handover-Prompt auslösen, damit noch Platz für die Zusammenfassung bleibt.
 
+## Worker-Schalter
+
+Die **Codex-Desktop-App** spawnt beim Start eine Reihe Background-Helper
+(Originator `Codex Desktop`). Diese verbrauchen Token, melden aber **kein
+Kontextfenster** zurück — eine Prozent-/Frei-Anzeige ist daher nicht möglich.
+Standardmäßig sind sie ausgeblendet; das Zählerlabel zeigt sie als
+`X aktiv (+Y Worker)`.
+
+Schiebe den **Worker-Schalter** in der Kopfzeile um, um sie einzublenden:
+
+- Worker-Karten erscheinen unter den echten Sessions
+- Ihr Balken bleibt leer (kein Kontextfenster)
+- Im Balken-Label steht stattdessen `X verbraucht · Worker (kein Kontextfenster)`
+- Sortierung der Worker: nach kumuliertem Verbrauch absteigend — größte
+  Token-Schlucker oben
+
+Der Schalter ist nützlich für die **Kostenübersicht**: alle Worker-Tokens
+zählen auf dasselbe Rate-Limit / Budget wie echte Chats.
+
 ## Verbindungs-Indikator (oben rechts)
 
 Der kleine farbige Punkt rechts in der Kopfzeile:

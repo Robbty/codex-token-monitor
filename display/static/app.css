@@ -265,6 +265,62 @@ html, body {
 }
 .toast--visible { opacity: 1; }
 
+/* --- toggle switch (worker visibility) ---------------------------------- */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+.toggle input { display: none; }
+.toggle__slider {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  background: #2a2f3a;
+  border-radius: 7px;
+  transition: background 0.15s;
+}
+.toggle__slider::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  background: var(--fg-dim);
+  border-radius: 50%;
+  transition: transform 0.15s, background 0.15s;
+}
+.toggle input:checked + .toggle__slider {
+  background: var(--accent);
+}
+.toggle input:checked + .toggle__slider::after {
+  transform: translateX(12px);
+  background: #fff;
+}
+.toggle:hover .toggle__label { color: var(--fg); }
+.toggle__label { transition: color 0.12s; }
+
+/* --- worker-row variant: no usable bar ----------------------------------- */
+
+.session--worker .bar {
+  background: #20242f;
+}
+.session--worker .bar__fill {
+  /* Workers report no model_context_window — keep the bar empty and
+     show a textual indicator in the label instead. */
+  clip-path: inset(0 100% 0 0);
+}
+.session--worker .bar__label {
+  color: var(--fg-mute);
+  font-weight: 500;
+}
+
 /* --- help button -------------------------------------------------------- */
 
 .help-btn {

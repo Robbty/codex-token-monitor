@@ -9,6 +9,14 @@
   const cwdEl = document.getElementById("cwd");
   const connEl = document.getElementById("conn");
   const rowTpl = document.getElementById("row-template");
+  const workerToggle = document.getElementById("show-workers");
+
+  // Workers are Codex-Desktop background helpers: they emit token-count
+  // events without a model_context_window. The dashboard hides them by
+  // default (no usable bar) but the toggle in the topbar can show them.
+  let showWorkers = false;
+  const isWorker = (snap) =>
+    !snap.context_window || snap.context_window <= 0;
 
   // -- formatting helpers --
 
@@ -118,21 +126,39 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
     const ctx = snap.context_window ?? 0;
     const used = snap.tokens_in_context ?? 0;
     const free = Math.max(0, ctx - used);
+    const worker = isWorker(snap);
+
+    rowEl.classList.toggle("session--worker", worker);
 
     const fill = rowEl.querySelector(".bar__fill");
-    // Reveal the leftmost pctUsed% of the fixed gradient; the rest stays
-    // hidden, so the colour at each x-pixel always matches its position on
-    // the bar (green on the left, red at the very right).
-    fill.style.clipPath = `inset(0 ${(100 - pctUsed).toFixed(2)}% 0 0)`;
-
     const bar = rowEl.querySelector(".bar");
-    bar.title =
-      `${free.toLocaleString("de-DE")} Token frei (${pctLeft}%)\n` +
-      `${used.toLocaleString("de-DE")} Token verbraucht (${pctUsed}%)\n` +
-      `${ctx.toLocaleString("de-DE")} Token Kontextfenster gesamt`;
+    const labelEl = rowEl.querySelector(".bar__label");
 
-    rowEl.querySelector(".free").textContent = fmtTokens(free);
-    rowEl.querySelector(".pctfree").textContent = pctLeft;
+    if (worker) {
+      // No usable context window; show consumption + hint instead of a bar.
+      fill.style.clipPath = `inset(0 100% 0 0)`;
+      labelEl.innerHTML =
+        `<span class="used"></span>&nbsp;verbraucht&nbsp;·&nbsp;` +
+        `<span style="opacity:0.7">Worker (kein Kontextfenster)</span>`;
+      labelEl.querySelector(".used").textContent = fmtTokens(
+        snap.session_total_tokens ?? used
+      );
+      bar.title =
+        `Worker-Session (kein Kontextfenster vorhanden)\n` +
+        `${(snap.session_total_tokens ?? used).toLocaleString("de-DE")} ` +
+        `Token kumuliert\n` +
+        `Wird zum Rate-Limit / Kosten gezählt.`;
+    } else {
+      fill.style.clipPath = `inset(0 ${(100 - pctUsed).toFixed(2)}% 0 0)`;
+      labelEl.innerHTML =
+        `<span class="free"></span>&nbsp;/&nbsp;<span class="pctfree"></span>%&nbsp;frei`;
+      labelEl.querySelector(".free").textContent = fmtTokens(free);
+      labelEl.querySelector(".pctfree").textContent = pctLeft;
+      bar.title =
+        `${free.toLocaleString("de-DE")} Token frei (${pctLeft}%)\n` +
+        `${used.toLocaleString("de-DE")} Token verbraucht (${pctUsed}%)\n` +
+        `${ctx.toLocaleString("de-DE")} Token Kontextfenster gesamt`;
+    }
 
     const cwdEl = rowEl.querySelector(".cwd");
     cwdEl.textContent = snap.session_cwd ?? "(unbekannt)";
@@ -173,7 +199,7 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
   }
 
   function renderUI() {
-    // Drop sessions that are closed.
+    // 1. Drop closed sessions completely.
     for (const [sid, snap] of sessions) {
       if (snap.session_active === false) {
         const row = sessionsEl.querySelector(`[data-sid="${sid}"]`);
@@ -183,25 +209,60 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
       }
     }
 
-    // Sort by percent_used desc (most-urgent first).
-    const sorted = [...sessions.values()].sort(
-      (a, b) => (b.percent_used ?? 0) - (a.percent_used ?? 0)
+    // 2. Determine visible set based on the worker toggle.
+    const visible = [...sessions.values()].filter(
+      (s) => showWorkers || !isWorker(s)
     );
 
-    for (const snap of sorted) {
+    // 3. Remove DOM rows that are no longer visible.
+    const visibleIds = new Set(visible.map((s) => s.session_id));
+    sessionsEl.querySelectorAll(".session").forEach((row) => {
+      if (!visibleIds.has(row.dataset.sid)) row.remove();
+    });
+
+    // 4. Sort: real sessions by percent_used desc, workers at the bottom
+    //    by session_total_tokens desc (highest consumers first).
+    visible.sort((a, b) => {
+      const aw = isWorker(a), bw = isWorker(b);
+      if (aw !== bw) return aw ? 1 : -1;
+      if (!aw) return (b.percent_used ?? 0) - (a.percent_used ?? 0);
+      return (b.session_total_tokens ?? 0) - (a.session_total_tokens ?? 0);
+    });
+
+    for (const snap of visible) {
       const row = ensureRow(snap.session_id);
       renderRow(row, snap);
-      sessionsEl.appendChild(row); // re-order
+      sessionsEl.appendChild(row);
     }
 
-    countEl.textContent = `${sessions.size} aktiv`;
-    emptyEl.classList.toggle("hidden", sessions.size > 0);
-    // Topbar scope label is set by initScope() at startup and only overridden
-    // here in scoped (single-project) mode where the cwd is fixed.
-    if (scope !== null && sessions.size > 0) {
+    // 5. Count label: distinguish visible vs hidden workers.
+    const total = sessions.size;
+    const workerCount = [...sessions.values()].filter(isWorker).length;
+    const realCount = total - workerCount;
+    if (showWorkers) {
+      countEl.textContent =
+        workerCount > 0
+          ? `${realCount} aktiv · ${workerCount} Worker`
+          : `${realCount} aktiv`;
+    } else {
+      countEl.textContent =
+        workerCount > 0
+          ? `${realCount} aktiv (+${workerCount} Worker)`
+          : `${realCount} aktiv`;
+    }
+    emptyEl.classList.toggle("hidden", visible.length > 0);
+    if (scope !== null && visible.length > 0) {
       cwdEl.textContent = scope;
       cwdEl.title = scope;
     }
+  }
+
+  // Toggle wiring: flip showWorkers and re-render.
+  if (workerToggle) {
+    workerToggle.addEventListener("change", () => {
+      showWorkers = workerToggle.checked;
+      renderUI();
+    });
   }
 
   // Server tells us whether we're scoped to a single project or system-wide.

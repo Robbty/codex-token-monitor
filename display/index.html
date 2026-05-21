@@ -13,6 +13,12 @@
     <div class="topbar__meta">
       <span id="count">0 aktiv</span>
       <span id="cwd" title="Beobachtetes Projektverzeichnis"></span>
+      <label class="toggle"
+             title="Hintergrund-Worker der Codex Desktop App einblenden (sie verbrauchen Token, melden aber kein Kontextfenster)">
+        <input type="checkbox" id="show-workers" />
+        <span class="toggle__slider"></span>
+        <span class="toggle__label">Worker</span>
+      </label>
       <button id="help-btn" class="help-btn" title="Bedienungsanleitung anzeigen">📖</button>
       <span id="conn" class="conn conn--disconnected" title="Verbindung zum Server">●</span>
     </div>
