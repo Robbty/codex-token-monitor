@@ -49,6 +49,29 @@ _sessions: dict[str, dict] = {}
 _subscribers_lock = threading.Lock()
 _subscribers: list[queue.Queue] = []
 
+# Cache: session_id -> absolute rollout path. The lookup walks
+# ~/.codex/sessions, so we only do it once per session.
+_path_cache: dict[str, str] = {}
+
+
+def _enrich_snapshot(snap: dict) -> dict:
+    """Add rollout_path (absolute) to the snapshot, with caching."""
+    sid = snap.get("session_id")
+    if not sid:
+        return snap
+    cached = _path_cache.get(sid)
+    if cached is None:
+        path = _find_rollout_for_sid(sid)
+        if path is not None:
+            try:
+                cached = str(path.resolve())
+            except OSError:
+                cached = str(path)
+            _path_cache[sid] = cached
+    if cached:
+        snap["rollout_path"] = cached
+    return snap
+
 
 def _broadcast(event: dict) -> None:
     with _subscribers_lock:
@@ -108,6 +131,7 @@ def _reader_thread(cwd_to_watch: str | None, codex_tokens_bin: str) -> None:
             sid = snap.get("session_id")
             if not sid:
                 continue
+            snap = _enrich_snapshot(snap)
             with _state_lock:
                 _sessions[sid] = snap
             _broadcast({"type": "snapshot", "data": snap})

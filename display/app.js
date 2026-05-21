@@ -71,6 +71,18 @@
         .then((r) => toast(r.warning ? r.warning : "Terminal fokussiert"))
         .catch(() => toast("Konnte Fenster nicht fokussieren", true));
     });
+    rowEl.querySelector(".btn--path").addEventListener("click", () => {
+      const sid = rowEl.dataset.sid;
+      const snap = sessions.get(sid);
+      const p = snap?.rollout_path;
+      if (!p) {
+        toast("Pfad noch nicht aufgelöst", true);
+        return;
+      }
+      postJson("/copy", { text: p })
+        .then(() => toast(`Pfad kopiert: …/${p.split("/").slice(-2).join("/")}`))
+        .catch(() => toast("Kopieren fehlgeschlagen", true));
+    });
     rowEl.querySelector(".btn--rollover").addEventListener("click", () => {
       const sid = rowEl.dataset.sid;
       const snap = sessions.get(sid);
@@ -114,8 +126,13 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
     fill.style.clipPath = `inset(0 ${(100 - pctUsed).toFixed(2)}% 0 0)`;
 
     const bar = rowEl.querySelector(".bar");
-    bar.title = `${used.toLocaleString("de-DE")} / ${ctx.toLocaleString("de-DE")} Token verbraucht — ${pctLeft}% Kontext frei`;
+    bar.title =
+      `${used.toLocaleString("de-DE")} Token verbraucht\n` +
+      `${free.toLocaleString("de-DE")} Token frei\n` +
+      `${ctx.toLocaleString("de-DE")} Token Kontextfenster gesamt\n` +
+      `→ ${pctUsed}% belegt · ${pctLeft}% frei`;
 
+    rowEl.querySelector(".used").textContent = fmtTokens(used);
     rowEl.querySelector(".free").textContent = fmtTokens(free);
 
     const cwdEl = rowEl.querySelector(".cwd");
