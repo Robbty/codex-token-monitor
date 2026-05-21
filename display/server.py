@@ -263,7 +263,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(400, "bad json")
             return
 
-        if self.path == "/open-dir":
+        if self.path == "/open-readme-dir":
+            # Open the directory that contains help.html / README.md
+            self._handle_open_dir({"path": str(HERE)})
+        elif self.path == "/open-dir":
             self._handle_open_dir(body)
         elif self.path == "/focus-terminal":
             self._handle_focus_terminal(body)
