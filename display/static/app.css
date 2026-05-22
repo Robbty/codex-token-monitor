@@ -306,19 +306,14 @@ html, body {
 .toggle:hover .toggle__label { color: var(--fg); }
 .toggle__label { transition: color 0.12s; }
 
-/* --- worker-row variant: no usable bar ----------------------------------- */
-
-.session--worker .bar {
-  background: #20242f;
-}
-.session--worker .bar__fill {
-  /* Workers report no model_context_window — keep the bar empty and
-     show a textual indicator in the label instead. */
-  clip-path: inset(0 100% 0 0);
-}
-.session--worker .bar__label {
-  color: var(--fg-mute);
-  font-weight: 500;
+/* --- worker-row variant: subtly distinct, fills normally ---------------- */
+/* Workers don't report their context window; the JS falls back to the
+   value of any real session (same Codex/same model usually = same limit)
+   or to a constant default. The bar fills like a real session, but the
+   bottom meta line gets a small dashed underline to flag "inferred". */
+.session--worker .cwd {
+  text-decoration: underline dashed var(--fg-mute);
+  text-underline-offset: 3px;
 }
 
 /* --- help button -------------------------------------------------------- */

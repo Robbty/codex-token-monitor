@@ -85,19 +85,27 @@ Handover in Codex einfügen, neue Session starten.
 
 Die **Codex-Desktop-App** spawnt beim Start eine Reihe Background-Helper
 (Originator `Codex Desktop`). Diese verbrauchen Token, melden aber **kein
-Kontextfenster** zurück — eine Prozent-/Frei-Anzeige ist daher nicht möglich.
-Standardmäßig sind sie ausgeblendet; das Zählerlabel zeigt sie als
-`X aktiv (+Y Worker)`.
+Kontextfenster** zurück. Standardmäßig sind sie ausgeblendet; das
+Zählerlabel zeigt sie als `X aktiv (+Y Worker)`.
 
 Schiebe den **Worker-Schalter** in der Kopfzeile um, um sie einzublenden:
 
 - Worker-Karten erscheinen unter den echten Sessions
-- Ihr Balken bleibt leer (kein Kontextfenster)
-- Im Balken-Label steht stattdessen `X verbraucht · Worker (kein Kontextfenster)`
+- Ihr Balken füllt sich basierend auf einem **geschätzten** Kontextfenster:
+  zuerst wird der Wert einer parallel laufenden echten Session übernommen
+  (gleiches Codex, gleiches Modell → gleiche Größe); falls keine echte
+  Session läuft, ist der Default `258400` (Codex-/GPT-5-Standard).
+- Hover-Tooltip auf der Bar markiert die Schätzung klar:
+  „Kontextfenster nicht gemeldet, angenommen 258.400"
+- Der `cwd` der Worker-Zeile ist gestrichelt unterstrichen — kleines
+  visuelles Zeichen, dass die Werte einer Annahme unterliegen
 - Sortierung der Worker: nach kumuliertem Verbrauch absteigend
 
 Der Schalter ist nützlich für die **Kostenübersicht**: alle Worker-Tokens
-zählen auf dasselbe Rate-Limit / Budget wie echte Chats.
+zählen auf dasselbe Rate-Limit / Budget wie echte Chats. Falls du
+hauptsächlich ein Modell mit anderer Kontextgröße verwendest, kannst du
+den Fallback-Default in `display/static/app.js` (Konstante
+`ASSUMED_CONTEXT_WINDOW`) anpassen.
 
 ## Verbindungs-Indikator (oben rechts)
 

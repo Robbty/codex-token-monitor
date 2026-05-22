@@ -18,6 +18,19 @@
   const isWorker = (snap) =>
     !snap.context_window || snap.context_window <= 0;
 
+  // Workers don't report their context window. Borrow the value from any
+  // real session if one is around (same Codex / same model → same limit);
+  // otherwise fall back to this constant. Adjust if you mostly use a model
+  // with a different context size.
+  const ASSUMED_CONTEXT_WINDOW = 258400; // GPT-5 / Codex default
+  const effectiveContextWindow = (snap) => {
+    if (snap.context_window && snap.context_window > 0) return snap.context_window;
+    for (const s of sessions.values()) {
+      if (s.context_window && s.context_window > 0) return s.context_window;
+    }
+    return ASSUMED_CONTEXT_WINDOW;
+  };
+
   // -- formatting helpers --
 
   const fmtTokens = (n) => {
@@ -121,12 +134,15 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
   }
 
   function renderRow(rowEl, snap) {
-    const pctUsed = snap.percent_used ?? 0;
-    const pctLeft = snap.percent_left ?? 100;
-    const ctx = snap.context_window ?? 0;
-    const used = snap.tokens_in_context ?? 0;
-    const free = Math.max(0, ctx - used);
     const worker = isWorker(snap);
+    const ctx = effectiveContextWindow(snap);
+    // For workers, tokens_in_context is missing too — fall back to the
+    // single token_count event's total. session_total_tokens is the same
+    // value in their case (only one event ever fired).
+    const used = snap.tokens_in_context ?? snap.session_total_tokens ?? 0;
+    const free = Math.max(0, ctx - used);
+    const pctUsed = ctx > 0 ? Math.min(100, Math.round((used / ctx) * 100)) : 0;
+    const pctLeft = 100 - pctUsed;
 
     rowEl.classList.toggle("session--worker", worker);
 
@@ -134,31 +150,21 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
     const bar = rowEl.querySelector(".bar");
     const labelEl = rowEl.querySelector(".bar__label");
 
-    if (worker) {
-      // No usable context window; show consumption + hint instead of a bar.
-      fill.style.clipPath = `inset(0 100% 0 0)`;
-      labelEl.innerHTML =
-        `<span class="used"></span>&nbsp;verbraucht&nbsp;·&nbsp;` +
-        `<span style="opacity:0.7">Worker (kein Kontextfenster)</span>`;
-      labelEl.querySelector(".used").textContent = fmtTokens(
-        snap.session_total_tokens ?? used
-      );
-      bar.title =
-        `Worker-Session (kein Kontextfenster vorhanden)\n` +
-        `${(snap.session_total_tokens ?? used).toLocaleString("de-DE")} ` +
-        `Token kumuliert\n` +
-        `Wird zum Rate-Limit / Kosten gezählt.`;
-    } else {
-      fill.style.clipPath = `inset(0 ${(100 - pctUsed).toFixed(2)}% 0 0)`;
-      labelEl.innerHTML =
-        `<span class="free"></span>&nbsp;/&nbsp;<span class="pctfree"></span>%&nbsp;frei`;
-      labelEl.querySelector(".free").textContent = fmtTokens(free);
-      labelEl.querySelector(".pctfree").textContent = pctLeft;
-      bar.title =
-        `${free.toLocaleString("de-DE")} Token frei (${pctLeft}%)\n` +
+    // Both worker and real sessions get a properly-filled bar now.
+    fill.style.clipPath = `inset(0 ${(100 - pctUsed).toFixed(2)}% 0 0)`;
+    labelEl.innerHTML =
+      `<span class="free"></span>&nbsp;/&nbsp;<span class="pctfree"></span>%&nbsp;frei`;
+    labelEl.querySelector(".free").textContent = fmtTokens(free);
+    labelEl.querySelector(".pctfree").textContent = pctLeft;
+
+    bar.title = worker
+      ? `Worker-Session — Kontextfenster nicht gemeldet, angenommen ` +
+        `${ctx.toLocaleString("de-DE")}.\n` +
+        `${used.toLocaleString("de-DE")} Token belegt (${pctUsed}%)\n` +
+        `${free.toLocaleString("de-DE")} Token frei (${pctLeft}%)`
+      : `${free.toLocaleString("de-DE")} Token frei (${pctLeft}%)\n` +
         `${used.toLocaleString("de-DE")} Token verbraucht (${pctUsed}%)\n` +
         `${ctx.toLocaleString("de-DE")} Token Kontextfenster gesamt`;
-    }
 
     const cwdEl = rowEl.querySelector(".cwd");
     cwdEl.textContent = snap.session_cwd ?? "(unbekannt)";
