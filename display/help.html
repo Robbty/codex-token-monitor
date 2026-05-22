@@ -46,6 +46,10 @@
               title="Verzeichnis mit README.md im Dateimanager öffnen">
         📁 README-Verzeichnis öffnen
       </button>
+      <button id="open-other-btn"
+              title="Die jeweils andere README in einem eigenen Fenster anzeigen">
+        📚 …
+      </button>
     </div>
     <main id="content" class="markdown">
       <p style="color: var(--fg-dim)">Lade README…</p>
@@ -53,10 +57,38 @@
   </div>
 
   <script>
+  // Decide which README to load based on the query string:
+  //   /help            → display/README.md  (Bedienung)
+  //   /help?doc=main   → ../README.md       (Projekt-README)
+  const params = new URLSearchParams(location.search);
+  const isMain = params.get("doc") === "main";
+  const SOURCE = isMain ? "/readme-main" : "/readme";
+
+  // Toolbar: the "📚" button always opens the OTHER document in a fresh
+  // popup, so the user can have both windows side by side.
+  const otherBtn = document.getElementById("open-other-btn");
+  if (isMain) {
+    document.title = "Codex Token Monitor — Projekt-README";
+    otherBtn.textContent = "📚 Display-Bedienung öffnen";
+    otherBtn.dataset.target = "/help";
+  } else {
+    document.title = "Codex Token Monitor — Bedienungsanleitung";
+    otherBtn.textContent = "📚 Projekt-README öffnen";
+    otherBtn.dataset.target = "/help?doc=main";
+  }
+  otherBtn.addEventListener("click", () => {
+    const target = otherBtn.dataset.target;
+    const name = target.includes("doc=main")
+      ? "codex-token-readme-main"
+      : "codex-token-readme-display";
+    window.open(target, name,
+      "popup=yes,width=760,height=820,resizable=yes,scrollbars=yes");
+  });
+
   document.addEventListener("DOMContentLoaded", async () => {
     const el = document.getElementById("content");
     try {
-      const r = await fetch("/readme");
+      const r = await fetch(SOURCE);
       if (!r.ok) throw new Error("HTTP " + r.status);
       const md = await r.text();
       if (typeof marked !== "undefined" && typeof marked.parse === "function") {
@@ -67,7 +99,20 @@
         el.innerHTML = "";
         el.appendChild(pre);
       }
-      document.title = "Codex Token Monitor — Bedienungsanleitung";
+      // Intercept Markdown links pointing to the other README so they
+      // open in a separate window instead of replacing the current page.
+      el.querySelectorAll('a[href="/help"], a[href="/help?doc=main"]')
+        .forEach((a) => {
+          a.addEventListener("click", (e) => {
+            e.preventDefault();
+            const target = a.getAttribute("href");
+            const name = target.includes("doc=main")
+              ? "codex-token-readme-main"
+              : "codex-token-readme-display";
+            window.open(target, name,
+              "popup=yes,width=760,height=820,resizable=yes,scrollbars=yes");
+          });
+        });
     } catch (e) {
       el.innerHTML =
         "<p><strong>Konnte README nicht laden.</strong></p>" +

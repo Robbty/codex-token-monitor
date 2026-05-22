@@ -51,6 +51,32 @@ Das Binary ist dynamisch gegen die glibc des Build-Systems gelinkt — siehe
 [Portabilität](#portabilität-und-statischer-build) für die Variante, die auf
 jedem Linux läuft.
 
+### Komplett-Bundle (Binary + Display-App)
+
+Wer beides nutzen will (CLI **und** das Statusfenster), kann das mit
+einem Skript in einem Schritt erzeugen:
+
+```bash
+./scripts/build.sh                 # baut gnu+musl, stagt musl-Bundle
+./scripts/build.sh --tarball       # zusätzlich ein versendbares .tar.gz
+./scripts/build.sh --variant gnu   # dynamische Variante im Bundle
+./scripts/build.sh --skip-build    # nur neu stagen ohne Cargo-Aufruf
+```
+
+Ergebnis liegt unter `target/release/bundle/`:
+
+```text
+target/release/bundle/
+├── codex-tokens          ← Binary (default: musl, statisch)
+├── display/              ← komplette Display-App
+├── README.md             ← diese Doku
+└── SHA256SUMS            ← Prüfsumme des Binarys
+```
+
+Mit `--tarball` zusätzlich
+`target/release/codex-token-monitor-v<version>-x86_64-linux-musl.tar.gz`
+(~500 KB), das man einfach an andere Rechner verschicken kann.
+
 ## Installation
 
 Damit `codex-tokens` aus jedem Terminal aufrufbar ist, das Binary in ein
