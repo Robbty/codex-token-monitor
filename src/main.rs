@@ -446,6 +446,11 @@ fn apply(state: &mut TokenState, item: RolloutItem) {
         } => {
             state.apply(&ev);
         }
+        RolloutItem::EventMsg {
+            payload: EventMsg::ContextCompacted,
+        } => {
+            state.compact_count += 1;
+        }
         _ => {}
     }
 }

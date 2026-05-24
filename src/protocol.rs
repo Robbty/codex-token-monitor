@@ -30,6 +30,10 @@ pub struct SessionMetaPayload {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventMsg {
     TokenCount(TokenCountEvent),
+    /// Emitted by Codex whenever the conversation history was compacted
+    /// (auto-compact at context limit, or manual /compact slash command).
+    /// Carries no payload — we just count occurrences per session.
+    ContextCompacted,
     #[serde(other)]
     Other,
 }

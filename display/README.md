@@ -76,10 +76,12 @@ Zwischenablage — praktisch für `codex-tokens --thread <UUID>`.
 |---|---|
 | **198 k / 78 % frei** | Aktuell freie Token absolut + gleichbedeutende Prozentangabe |
 | **30 k / 258 k** | Aktuell belegt / Kontextfenster-Größe insgesamt |
-| **Σ 67 k** | Kumulierter Token-Verbrauch über die gesamte Session |
+| **Σ 67 k** | Kumulierter Token-Verbrauch über die gesamte Session, inklusive aller Compact-Vorgänge |
+| **↻ 2×** | (Badge, nur sichtbar wenn > 0) Wie oft Codex den Kontext bereits zusammengefasst hat — entweder automatisch (Limit erreicht) oder über `/compact` in der TUI. Die Σ-Summe enthält auch die Token, die für diese Compaction-Turns verbraucht wurden. |
 
 Als Faustregel bei ~80 % Verbrauch (= 20 % frei) den ↻-Button drücken,
-Handover in Codex einfügen, neue Session starten.
+Handover in Codex einfügen, neue Session starten. Wenn Codex stattdessen
+selbst auto-compact, wandert der ↻-Zähler eins hoch.
 
 ## Worker-Schalter
 

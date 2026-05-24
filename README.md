@@ -360,11 +360,13 @@ das wieder lösen:
 ```text
 session_id=019e218d-…
 session_cwd=/pfad/zu/deinem-projekt
+session_active=true
+compact_count=2                # Wie oft der Kontext bereits zusammengefasst wurde (auto/manuell)
 context_window=258400
 percent_left=79
 percent_used=21
 tokens_in_context=63437        # Aktuelle Belegung des Kontextfensters (last_token_usage.total_tokens)
-session_total_tokens=1484129   # Kumulierter Session-Verbrauch
+session_total_tokens=1484129   # Kumulierter Verbrauch des Chats, inkl. aller Compact-Vorgänge
 total_input_tokens=…
 total_cached_input_tokens=…
 total_output_tokens=…

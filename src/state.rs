@@ -12,6 +12,11 @@ pub struct TokenState {
     /// `Some(false)` if not; `None` if the active-check could not run
     /// (e.g. non-Linux or no /proc access).
     pub session_active: Option<bool>,
+    /// Number of `context_compacted` events observed in this session. Each
+    /// represents one auto-compact (context hit limit) or manual `/compact`.
+    /// `total_token_usage` already includes the tokens consumed by those
+    /// compaction turns, so this counter just adds visibility.
+    pub compact_count: i64,
 }
 
 impl TokenState {

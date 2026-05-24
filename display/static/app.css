@@ -198,6 +198,17 @@ html, body {
   color: var(--fg-mute);
 }
 
+.compact {
+  color: var(--accent);
+  font-weight: 600;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  margin-left: 4px;
+  cursor: help;
+}
+.compact .compact-n { font-weight: 700; }
+
 .actions {
   margin-left: auto;
   display: flex;

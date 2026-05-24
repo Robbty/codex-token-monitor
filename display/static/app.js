@@ -195,6 +195,24 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
       `${fmtTokens(used)} / ${fmtTokens(ctx)}`;
     rowEl.querySelector(".cumulative").textContent =
       `Σ ${fmtTokens(snap.session_total_tokens)}`;
+
+    // Compact counter: only visible if the session has been compacted
+    // at least once. Shows e.g. "↻ 2×" with a tooltip explaining the
+    // mechanism.
+    const cc = snap.compact_count ?? 0;
+    const compactEl = rowEl.querySelector(".compact");
+    if (cc > 0) {
+      compactEl.querySelector(".compact-n").textContent = cc;
+      const total = snap.session_total_tokens ?? 0;
+      compactEl.title =
+        `Kontext wurde ${cc}× zusammengefasst ` +
+        `(Auto-Compact am Limit oder /compact).\n` +
+        `Σ ${total.toLocaleString("de-DE")} Token sind die echte ` +
+        `Gesamtsumme des Chats inklusive aller Compaction-Vorgänge.`;
+      compactEl.classList.remove("hidden");
+    } else {
+      compactEl.classList.add("hidden");
+    }
   }
 
   function applySnapshot(snap) {
