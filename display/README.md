@@ -123,7 +123,17 @@ In der Kopfzeile steht entweder
 - **„Alle Projekte"** — system-weiter Modus, alle Codex-Sessions auf dem Rechner werden gelistet
 - **Der absolute Pfad** — eingegrenzter Modus, nur eine Session, die in genau diesem Verzeichnis läuft
 
-Sortierung: Sessions mit höchstem Verbrauch stehen oben.
+### Sortierung der Karten
+
+Von oben nach unten:
+
+1. **Echte Sessions** vor Worker-Sessions
+2. Innerhalb der echten Sessions: zuerst nach **`compact_count` absteigend**
+   (jede Kontext-Komprimierung kostet einen kompletten Turn → höchster
+   bisheriger „Aufwand" steht oben)
+3. Bei gleichem `compact_count`: nach **`percent_used` absteigend** (der
+   gerade vollste Balken oben)
+4. Worker am Ende, sortiert nach kumuliertem Verbrauch absteigend
 
 ## Anpassung
 

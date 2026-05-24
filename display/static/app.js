@@ -244,12 +244,20 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
       if (!visibleIds.has(row.dataset.sid)) row.remove();
     });
 
-    // 4. Sort: real sessions by percent_used desc, workers at the bottom
-    //    by session_total_tokens desc (highest consumers first).
+    // 4. Sort order, top to bottom:
+    //    - real sessions first, then workers
+    //    - among real sessions: most-compacted first (each compact costs a
+    //      whole turn-worth of tokens, so this is a 'cost so far' proxy);
+    //      tiebreaker is current bar fill (percent_used desc)
+    //    - among workers: highest cumulative consumption first
     visible.sort((a, b) => {
       const aw = isWorker(a), bw = isWorker(b);
       if (aw !== bw) return aw ? 1 : -1;
-      if (!aw) return (b.percent_used ?? 0) - (a.percent_used ?? 0);
+      if (!aw) {
+        const cc = (b.compact_count ?? 0) - (a.compact_count ?? 0);
+        if (cc !== 0) return cc;
+        return (b.percent_used ?? 0) - (a.percent_used ?? 0);
+      }
       return (b.session_total_tokens ?? 0) - (a.session_total_tokens ?? 0);
     });
 
