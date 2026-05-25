@@ -5,6 +5,8 @@
 
 # Generated docs (built from README.md)
 README.pdf
+HANDOFF.md
+CLAUDE.md
 
 # Python bytecode
 __pycache__/
