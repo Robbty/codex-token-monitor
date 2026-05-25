@@ -26,6 +26,27 @@ oben in dieser Toolbar erreichbar; sie öffnet in einem zweiten Fenster).
 
 Beenden: Fenster schließen oder im Launcher-Terminal `Strg+C`.
 
+### Desktop-Icon (zum Anklicken)
+
+Ein Skript legt einen Menü-Eintrag und ein anklickbares Desktop-Symbol an:
+
+```bash
+./display/install-desktop.sh                 # system-weit
+./display/install-desktop.sh --cwd /pfad     # auf ein Projekt eingegrenzt
+./display/install-desktop.sh --no-desktop    # nur Anwendungsmenü, kein Icon
+```
+
+Es erzeugt `codex-token-monitor.desktop` in `~/.local/share/applications/`
+(Anwendungsmenü) und auf dem Desktop, mit dem mitgelieferten `icon.png`.
+Pfade werden dynamisch ermittelt — bei verschobenem Repo das Skript
+einfach erneut ausführen.
+
+Beim ersten Doppelklick verlangen XFCE/GNOME ggf. eine Bestätigung
+(Rechtsklick → „Diese Datei ausführbar machen" / „Allow Launching").
+Das Skript markiert das Icon bereits als vertrauenswürdig
+(`gio … metadata::trusted true`), was die Nachfrage in den meisten
+Fällen erübrigt.
+
 ## Die Karte im Detail
 
 ```text
