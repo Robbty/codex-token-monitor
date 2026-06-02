@@ -34,6 +34,71 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_PORT = 8765
 SSE_HEARTBEAT_SEC = 10
 
+# Plan-widget settings live in a small config file alongside the user's
+# other XDG state. The widget is opt-in because it reads the auth token
+# from ~/.codex/auth.json and makes outbound HTTPS calls.
+CONFIG_DIR = Path(
+    os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+) / "codex-token-monitor"
+CONFIG_PATH = CONFIG_DIR / "config.json"
+
+DEFAULT_SETTINGS = {
+    "plan_widget": {
+        "enabled": False,
+        # One-shot ack: stays True once the user has seen + accepted the
+        # consent modal. We deliberately do NOT reset this when the widget
+        # gets toggled off, so the dialog only ever appears once per
+        # config-file (deleting the file resurfaces it).
+        "consent_acknowledged": False,
+        "rows": {
+            "main":        True,
+            "codex_spark": False,
+            "code_review": False,
+            "credits":     False,
+        },
+    },
+}
+
+# Cache for the upstream /plan response. The numbers only change when the
+# user actually makes a Codex request; refreshing more often than once a
+# minute just burns the rate-limit of our own call.
+PLAN_CACHE_TTL_SEC = 60
+_plan_cache_lock = threading.Lock()
+_plan_cache: dict | None = None
+_plan_cache_ts: float = 0.0
+_plan_cache_exit: int = 0  # last subprocess exit code
+
+
+def _load_settings() -> dict:
+    """Read settings from disk, merge over defaults, tolerate corruption."""
+    try:
+        raw = CONFIG_PATH.read_text()
+        data = json.loads(raw)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return json.loads(json.dumps(DEFAULT_SETTINGS))  # deep copy
+    # Deep-merge user data over defaults so a new row toggle added in a
+    # later version surfaces with its default value instead of "missing".
+    merged = json.loads(json.dumps(DEFAULT_SETTINGS))
+    pw_in = (data.get("plan_widget") or {})
+    pw_out = merged["plan_widget"]
+    if isinstance(pw_in.get("enabled"), bool):
+        pw_out["enabled"] = pw_in["enabled"]
+    if isinstance(pw_in.get("consent_acknowledged"), bool):
+        pw_out["consent_acknowledged"] = pw_in["consent_acknowledged"]
+    rows_in = pw_in.get("rows") or {}
+    if isinstance(rows_in, dict):
+        for k, v in rows_in.items():
+            if isinstance(v, bool):
+                pw_out["rows"][k] = v
+    return merged
+
+
+def _save_settings(data: dict) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = CONFIG_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    tmp.replace(CONFIG_PATH)  # atomic on POSIX
+
 # --- shared state ---------------------------------------------------------
 
 # Scope label: None for system-wide, otherwise the absolute path the user
@@ -52,6 +117,61 @@ _subscribers: list[queue.Queue] = []
 # Cache: session_id -> absolute rollout path. The lookup walks
 # ~/.codex/sessions, so we only do it once per session.
 _path_cache: dict[str, str] = {}
+
+# Set in main(); the /plan handler needs to spawn the same binary used by
+# the session-tail subprocess.
+_codex_tokens_bin: str = "codex-tokens"
+
+
+def _get_plan_cached(bin_path: str) -> tuple[dict, int]:
+    """Return (data, exit_code). `data` is either the upstream JSON or the
+    Rust error envelope `{"error","code"}`. Cached for PLAN_CACHE_TTL_SEC.
+    Exit code is forwarded so the UI can distinguish states.
+    """
+    global _plan_cache, _plan_cache_ts, _plan_cache_exit
+    now = time.time()
+    with _plan_cache_lock:
+        if _plan_cache is not None and (now - _plan_cache_ts) < PLAN_CACHE_TTL_SEC:
+            return _plan_cache, _plan_cache_exit
+    # Spawn outside the lock so concurrent requests don't serialize the call.
+    try:
+        result = subprocess.run(
+            [bin_path, "plan"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        stdout = result.stdout.strip()
+        stderr = (result.stderr or "").strip()
+        if not stdout:
+            # The plan subcommand always emits JSON. Empty stdout means the
+            # binary is too old (no `plan` subcommand yet) or crashed before
+            # printing. Surface stderr so the UI can show the real cause.
+            data = {
+                "error": stderr[:240] or "binary returned no output",
+                "code": "binary_outdated" if "unexpected argument" in stderr else "no_output",
+            }
+            exit_code = result.returncode or 4
+        else:
+            try:
+                data = json.loads(stdout)
+            except json.JSONDecodeError:
+                data = {
+                    "error": f"unparseable response: {stdout[:200]}",
+                    "code": "bad_response",
+                }
+            exit_code = result.returncode
+    except FileNotFoundError:
+        data = {"error": f"binary not found: {bin_path}", "code": "binary_missing"}
+        exit_code = 4
+    except subprocess.TimeoutExpired:
+        data = {"error": "plan fetch timed out", "code": "timeout"}
+        exit_code = 4
+    with _plan_cache_lock:
+        _plan_cache = data
+        _plan_cache_ts = time.time()
+        _plan_cache_exit = exit_code
+    return data, exit_code
 
 
 def _enrich_snapshot(snap: dict) -> dict:
@@ -247,6 +367,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._serve_events()
         elif url.path == "/scope":
             self._json_ok(extra={"scope": _scope})
+        elif url.path == "/settings":
+            self._serve_settings()
+        elif url.path == "/plan":
+            self._serve_plan()
         elif url.path == "/readme":
             self._serve_file(HERE / "README.md", "text/markdown; charset=utf-8")
         elif url.path == "/readme-main":
@@ -257,6 +381,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif url.path == "/help":
             # Single help page; ?doc=main switches to the project README.
             self._serve_file(HERE / "help.html", "text/html; charset=utf-8")
+        elif url.path == "/icon.png" or url.path == "/favicon.ico":
+            # Xubuntu/XFCE picks the favicon up for the window-list entry.
+            # The browser also auto-requests /favicon.ico; route both to the
+            # same PNG so neither path 404s.
+            self._serve_file(HERE / "icon.png", "image/png")
         else:
             self.send_error(404, "not found")
 
@@ -278,6 +407,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_focus_terminal(body)
         elif self.path == "/copy":
             self._handle_copy(body)
+        elif self.path == "/settings":
+            self._handle_update_settings(body)
         else:
             self.send_error(404, "not found")
 
@@ -467,6 +598,63 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 continue
         self.send_error(500, "no clipboard tool found (install xclip or wl-clipboard)")
 
+    def _serve_settings(self) -> None:
+        body = json.dumps(_load_settings()).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_update_settings(self, body: dict) -> None:
+        # We accept partial updates so the UI can flip one toggle at a time
+        # without round-tripping the entire blob.
+        current = _load_settings()
+        pw_in = (body.get("plan_widget") or {})
+        if isinstance(pw_in.get("enabled"), bool):
+            current["plan_widget"]["enabled"] = pw_in["enabled"]
+        if isinstance(pw_in.get("consent_acknowledged"), bool):
+            current["plan_widget"]["consent_acknowledged"] = pw_in["consent_acknowledged"]
+        rows_in = pw_in.get("rows") or {}
+        if isinstance(rows_in, dict):
+            for k, v in rows_in.items():
+                if isinstance(v, bool):
+                    current["plan_widget"]["rows"][k] = v
+        try:
+            _save_settings(current)
+        except OSError as e:
+            self.send_error(500, f"could not persist settings: {e}")
+            return
+        # On opt-in flip, drop the cache so the next /plan call fetches fresh
+        # data instead of serving a stale (or empty) cached error envelope.
+        global _plan_cache, _plan_cache_ts
+        with _plan_cache_lock:
+            _plan_cache = None
+            _plan_cache_ts = 0.0
+        self._json_ok(extra={"settings": current})
+
+    def _serve_plan(self) -> None:
+        settings = _load_settings()
+        if not settings["plan_widget"]["enabled"]:
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "error": "plan widget not opted in",
+                "code": "disabled",
+            }).encode())
+            return
+
+        data, exit_code = _get_plan_cached(_codex_tokens_bin)
+        status = 200 if exit_code == 0 else 200  # always 200; UI reads `code`
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _json_ok(self, extra: dict | None = None) -> None:
         payload = {"ok": True}
         if extra:
@@ -509,8 +697,9 @@ def main() -> int:
         sys.stderr.write(f"[server] cwd does not exist: {args.cwd}\n")
         return 2
 
-    global _scope
+    global _scope, _codex_tokens_bin
     _scope = str(Path(args.cwd).resolve()) if args.cwd else None
+    _codex_tokens_bin = args.codex_tokens_bin
 
     # Background workers.
     t1 = threading.Thread(

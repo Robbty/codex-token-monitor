@@ -447,20 +447,187 @@ Drei Modi, in dieser Priorität:
    ([siehe oben](#mehrere-codex-sessions-im-selben-verzeichnis))
    verwenden.
 
+## Plan-Subcommand: kontoseitige Rate-Limits
+
+Neben dem Per-Session-Kontextfenster (das mit `--follow` & Co.
+abgefragt wird) hat dein ChatGPT-Account **rollierende Rate-Limits**
+über die einzelne Session hinaus: ein gleitendes 5-Stunden-Fenster
+und ein gleitendes Wochen-Fenster, plus optional Sonderlimits für
+Premium-Features wie Codex-Spark und einen Credit-Stand.
+
+Das Subcommand `codex-tokens plan` ruft genau diese Werte vom
+ChatGPT-Backend ab und gibt sie als JSON aus.
+
+```bash
+codex-tokens plan
+codex-tokens plan | jq '.rate_limit.primary_window'
+codex-tokens plan | jq -r '"\(.plan_type) - 5h: \(.rate_limit.primary_window.used_percent)%"'
+```
+
+### Wie es funktioniert
+
+```text
+codex-tokens plan
+   │
+   │ liest tokens.access_token
+   ▼
+~/.codex/auth.json
+   │
+   │ HTTPS GET mit Authorization: Bearer …
+   ▼
+https://chatgpt.com/backend-api/wham/usage
+   │
+   │ JSON-Antwort
+   ▼
+stdout
+```
+
+Voraussetzungen:
+
+- **Codex CLI eingeloggt**: `codex login` muss bereits ausgeführt
+  worden sein, sodass `~/.codex/auth.json` mit gültigem
+  `tokens.access_token` existiert.
+- **Netzwerk**: erreichbares `chatgpt.com` (HTTPS, Standard-CA-Vertrauen).
+
+Der Subcommand schickt **nur** den Bearer-Token, kein User-Agent
+mit persönlicher Info (statisch `codex-token-monitor/<version>`).
+Token wird nicht ge-loggt, nicht ausgegeben.
+
+### Ausgabe
+
+Bei Erfolg (Exit 0) — die rohe JSON-Antwort des Backends:
+
+```jsonc
+{
+  "plan_type": "prolite",
+  "rate_limit": {
+    "allowed": true,
+    "limit_reached": false,
+    "primary_window":   { "used_percent": 27, "limit_window_seconds": 18000,  "reset_at": 1780406150 },
+    "secondary_window": { "used_percent": 18, "limit_window_seconds": 604800, "reset_at": 1780903122 }
+  },
+  "additional_rate_limits": [
+    {
+      "limit_name": "GPT-5.3-Codex-Spark",
+      "metered_feature": "codex_bengalfox",
+      "rate_limit": { /* identische Struktur wie rate_limit */ }
+    }
+  ],
+  "code_review_rate_limit": null,
+  "credits": {
+    "balance": "0",
+    "has_credits": false,
+    "unlimited": false,
+    "overage_limit_reached": false,
+    "approx_local_messages": [0, 0],
+    "approx_cloud_messages": [0, 0]
+  }
+}
+```
+
+`reset_at` ist ein Unix-Timestamp in Sekunden (UTC).
+`limit_window_seconds` gibt die Länge des rollierenden Fensters an
+(18000 = 5 h, 604800 = 7 d).
+
+Bei Fehlern (Exit ≠ 0) — ein kleines Error-Envelope:
+
+```json
+{ "error": "kurze Beschreibung", "code": "kategorie" }
+```
+
+### Exit-Codes
+
+| Code | Bedeutung | Aktion |
+|---|---|---|
+| `0` | Erfolg, JSON auf stdout | — |
+| `2` | `auth_missing` — `auth.json` fehlt oder `tokens.access_token` ist leer | `codex login` ausführen |
+| `3` | `token_expired` — Backend hat 401/403 geantwortet | Eine beliebige Codex-Interaktion startet den Token-Refresh |
+| `4` | `network` / `timeout` — chatgpt.com unerreichbar oder > 10 s | Internet prüfen, später erneut versuchen |
+
+Mit diesen vier Codes lassen sich Pipelines sauber bauen, ohne stderr
+zu parsen.
+
+### Token-Lebensdauer
+
+Der Access-Token ist ein JWT mit typisch **~60 Min** Gültigkeit. Codex
+selbst refresht ihn bei jeder aktiven Nutzung — das Tool tut das
+nicht. Solange du Codex regelmäßig benutzt, ist alles frisch. Wenn der
+Token abläuft, liefert `codex-tokens plan` Exit 3 — eine einzige
+Codex-Interaktion (auch `!ls` reicht) erneuert die Datei.
+
+Ein automatischer OAuth-Refresh wäre möglich, ist aber bewusst nicht
+implementiert: er würde uns in State-Konflikte mit gleichzeitig
+laufendem Codex bringen.
+
+### Bash-Beispiele
+
+Quick-Check der 5-h-Auslastung:
+
+```bash
+codex-tokens plan | jq -r '.rate_limit.primary_window.used_percent'
+```
+
+Reset-Countdown in Minuten:
+
+```bash
+codex-tokens plan \
+  | jq -r '.rate_limit.primary_window | "noch \((.reset_at - now) / 60 | floor) min bis Reset"'
+```
+
+Plan-Typ + alle Sonderfenster:
+
+```bash
+codex-tokens plan | jq -r '
+  "\(.plan_type)",
+  "  5h:  \(.rate_limit.primary_window.used_percent)%",
+  "  7d:  \(.rate_limit.secondary_window.used_percent)%",
+  (.additional_rate_limits[] | "  + \(.limit_name)  5h: \(.rate_limit.primary_window.used_percent)%")'
+```
+
+Limit-Reached als Bash-Exit-Code (für Skript-Logik):
+
+```bash
+if codex-tokens plan | jq -e '.rate_limit.limit_reached' >/dev/null; then
+  echo "Rate-Limit erreicht — pausieren oder anderen Plan benutzen"
+fi
+```
+
+Live-Counter in einer separaten tmux-Pane:
+
+```bash
+watch -n 60 'codex-tokens plan \
+  | jq -r ".plan_type + \" — \" + (.rate_limit.primary_window.used_percent|tostring) + \"%\""'
+```
+
+### Privacy in zwei Sätzen
+
+Der Subcommand schickt deinen Codex-OAuth-Token an genau einen
+Endpoint: `chatgpt.com/backend-api/wham/usage`. Sonst nichts — keine
+Telemetrie, kein Drittsystem, keine Persistierung der Antwort. Volle
+Architektur und FAQ stehen in
+[`display/README.md`](display/README.md).
+
 ## Display-App (Statusfenster ohne Browser-Chrome)
 
 Unter `display/` liegt ein kleines Statusfenster, das die laufenden
 Codex-Sessions eines Projektverzeichnisses in Echtzeit anzeigt — pro
 Session eine eigene Zeile mit horizontalem Auslastungs-Balken (Verlauf
-grün→gelb→rot), freier Token-Zahl, Idle-Timer und drei Action-Buttons.
+grün→gelb→rot), freier Token-Zahl, Idle-Timer und vier Action-Buttons.
 Geschlossene Sessions verschwinden automatisch.
+
+Über der Sessions-Liste liegt optional ein **Plan-Widget**, das die
+oben beschriebenen kontoseitigen Rate-Limits als kompakte Balken-Zeilen
+zeigt (`codex-tokens plan` als Datenquelle, opt-in, Consent-Modal beim
+ersten Aktivieren). Details in [`display/README.md`](display/README.md).
 
 Architektur: ein Python-Helfer-Server (`server.py`, stdlib only)
 spawnt `codex-tokens --cwd … --all --follow --watch-new --require-open
 --json` als Subprozess und streamt die NDJSON-Snapshots per Server-Sent
 Events an das Browserfenster (`index.html` + `app.css` + `app.js`).
 Der Browser läuft im `--app=`-Modus ohne URL-Leiste und sieht aus wie
-eine native App.
+eine native App. Das Plan-Widget nutzt einen zweiten Pfad: `GET /plan`
+auf demselben Server, der `codex-tokens plan` spawnt und das Ergebnis
+60 s cached.
 
 ### Voraussetzungen
 

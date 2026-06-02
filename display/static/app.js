@@ -411,4 +411,405 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
   });
 
   initScope().then(connect);
+
+  // ---------------------------------------------------------------------
+  // Plan widget (account-level rate limits — opt-in)
+  // ---------------------------------------------------------------------
+  //
+  // Data path: server.py /plan → spawns `codex-tokens plan` → calls
+  // chatgpt.com/backend-api/wham/usage with the OAuth token stored under
+  // ~/.codex/auth.json. The endpoint returns a primary (5h) and secondary
+  // (7d) rolling window for the main plan, optional per-feature windows
+  // under `additional_rate_limits[]`, and a credits balance.
+  //
+  // We poll once a minute when enabled — the values only change when the
+  // user actually makes a Codex request, so higher frequency would just
+  // burn the user's own rate-limit budget on us.
+
+  const PLAN_POLL_MS = 60_000;
+  const PLAN_WIDGET_EL = document.getElementById("plan-widget");
+  const PLAN_SETTINGS_EL = document.getElementById("plan-settings");
+  const PLAN_SETTINGS_BTN = document.getElementById("plan-settings-btn");
+  const PS_ROWS_DYNAMIC = document.getElementById("ps-rows-dynamic");
+
+  let planSettings = null;
+  let planData = null;
+  let planError = null;
+  let planFetchTimer = null;
+
+  // Known additional_rate_limits ↔ setting-key mapping. Falls back to
+  // a normalized form derived from limit_name when the upstream serves a
+  // new entry we haven't seen before (default toggle: off).
+  const KNOWN_ADDITIONAL = {
+    "GPT-5.3-Codex-Spark": "codex_spark",
+  };
+
+  function normalizeAdditionalKey(limitName) {
+    return limitName
+      .replace(/^GPT-\d+(\.\d+)?-/, "")  // strip "GPT-5.3-"
+      .toLowerCase()
+      .replace(/-/g, "_")
+      .replace(/[^a-z0-9_]/g, "");
+  }
+
+  function additionalKey(limitName) {
+    return KNOWN_ADDITIONAL[limitName] || normalizeAdditionalKey(limitName);
+  }
+
+  async function loadPlanSettings() {
+    try {
+      const r = await fetch("/settings");
+      planSettings = await r.json();
+    } catch {
+      planSettings = {
+        plan_widget: {
+          enabled: false,
+          rows: { main: true, codex_spark: false, code_review: false, credits: false },
+        },
+      };
+    }
+    syncSettingsUI();
+    if (planSettings.plan_widget.enabled) {
+      startPlanPolling();
+    }
+  }
+
+  async function patchPlanSettings(patch) {
+    const r = await fetch("/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan_widget: patch }),
+    });
+    const j = await r.json();
+    if (j.settings) {
+      planSettings = j.settings;
+      syncSettingsUI();
+    }
+  }
+
+  function syncSettingsUI() {
+    const pw = planSettings?.plan_widget;
+    if (!pw) return;
+    document.getElementById("ps-enabled").checked = !!pw.enabled;
+    for (const k of ["main", "codex_spark", "code_review", "credits"]) {
+      const el = document.getElementById(`ps-row-${k}`);
+      if (el) el.checked = !!pw.rows[k];
+    }
+    // Render any extra rows discovered at runtime (unknown additional_rate_limits).
+    PS_ROWS_DYNAMIC.innerHTML = "";
+    for (const [k, v] of Object.entries(pw.rows)) {
+      if (["main", "codex_spark", "code_review", "credits"].includes(k)) continue;
+      const lbl = document.createElement("label");
+      lbl.className = "settings-popover__row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!v;
+      cb.addEventListener("change", () =>
+        patchPlanSettings({ rows: { [k]: cb.checked } }).then(renderPlanWidget)
+      );
+      const span = document.createElement("span");
+      span.textContent = k;
+      lbl.appendChild(cb);
+      lbl.appendChild(span);
+      PS_ROWS_DYNAMIC.appendChild(lbl);
+    }
+  }
+
+  function startPlanPolling() {
+    if (planFetchTimer) clearInterval(planFetchTimer);
+    fetchPlan();
+    planFetchTimer = setInterval(fetchPlan, PLAN_POLL_MS);
+  }
+  function stopPlanPolling() {
+    if (planFetchTimer) clearInterval(planFetchTimer);
+    planFetchTimer = null;
+    planData = null;
+    planError = null;
+    PLAN_WIDGET_EL.classList.add("hidden");
+    PLAN_WIDGET_EL.innerHTML = "";
+  }
+
+  async function fetchPlan() {
+    try {
+      const r = await fetch("/plan");
+      const j = await r.json();
+      if (r.status === 403 || j.code === "disabled") {
+        planData = null;
+        planError = j;
+      } else if (j.error || j.code) {
+        // Rust error envelope (auth_missing | token_expired | network | …).
+        planData = null;
+        planError = j;
+      } else {
+        planData = j;
+        planError = null;
+        // Auto-register any unknown additional_rate_limit names with default off.
+        ensureKnownAdditionals(j.additional_rate_limits || []);
+      }
+    } catch (e) {
+      planData = null;
+      planError = { error: String(e), code: "fetch_failed" };
+    }
+    renderPlanWidget();
+  }
+
+  function ensureKnownAdditionals(list) {
+    if (!planSettings) return;
+    const rows = planSettings.plan_widget.rows;
+    let added = false;
+    for (const entry of list) {
+      const k = additionalKey(entry.limit_name);
+      if (!(k in rows)) {
+        rows[k] = false;
+        added = true;
+      }
+    }
+    if (added) {
+      // Persist so the new toggle shows up next time too.
+      patchPlanSettings({ rows: { ...rows } });
+    }
+  }
+
+  function renderPlanWidget() {
+    PLAN_WIDGET_EL.innerHTML = "";
+    if (!planSettings?.plan_widget.enabled) {
+      PLAN_WIDGET_EL.classList.add("hidden");
+      return;
+    }
+    PLAN_WIDGET_EL.classList.remove("hidden");
+
+    if (planError) {
+      PLAN_WIDGET_EL.appendChild(planErrorEl(planError));
+      return;
+    }
+    if (!planData) {
+      // First fetch hasn't returned yet.
+      const el = document.createElement("div");
+      el.className = "plan__error";
+      el.textContent = "Plan-Daten werden geladen …";
+      PLAN_WIDGET_EL.appendChild(el);
+      return;
+    }
+
+    const rows = planSettings.plan_widget.rows;
+
+    if (rows.main && planData.rate_limit) {
+      PLAN_WIDGET_EL.appendChild(
+        rateLimitRow("Plan", planData.rate_limit, planData.plan_type)
+      );
+    }
+    if (rows.code_review && planData.code_review_rate_limit) {
+      PLAN_WIDGET_EL.appendChild(
+        rateLimitRow("Code-Review", planData.code_review_rate_limit)
+      );
+    }
+    for (const entry of planData.additional_rate_limits || []) {
+      const k = additionalKey(entry.limit_name);
+      if (rows[k] && entry.rate_limit) {
+        PLAN_WIDGET_EL.appendChild(
+          rateLimitRow(entry.limit_name, entry.rate_limit)
+        );
+      }
+    }
+    if (rows.credits && planData.credits) {
+      PLAN_WIDGET_EL.appendChild(creditsRow(planData.credits));
+    }
+  }
+
+  function rateLimitRow(label, rl, planType) {
+    const row = document.createElement("div");
+    row.className = "plan__row";
+    if (rl.limit_reached) row.classList.add("plan__row--limit-reached");
+
+    const lbl = document.createElement("div");
+    lbl.className = "plan__label";
+    if (planType) {
+      // Main row: show "Plan · <plan_type>" so the user sees at a glance
+      // what tariff the numbers belong to. The plan_type comes raw from the
+      // backend (e.g. "prolite", "plus", "pro").
+      lbl.textContent = `${label} · ${planType}`;
+      lbl.title = `Plan-Typ laut Backend: ${planType}`;
+    } else {
+      lbl.textContent = label;
+    }
+    row.appendChild(lbl);
+
+    const bars = document.createElement("div");
+    bars.className = "plan__bars";
+    if (rl.primary_window)   bars.appendChild(windowBar("5 h", rl.primary_window));
+    if (rl.secondary_window) bars.appendChild(windowBar("7 d", rl.secondary_window));
+    row.appendChild(bars);
+    return row;
+  }
+
+  function windowBar(windowLabel, win) {
+    const pct = Math.max(0, Math.min(100, win.used_percent ?? 0));
+    const wrap = document.createElement("div");
+    wrap.className = "plan__bar";
+
+    const w = document.createElement("span");
+    w.className = "plan__bar-window";
+    w.textContent = windowLabel;
+    wrap.appendChild(w);
+
+    const track = document.createElement("div");
+    track.className = "plan__bar-track";
+    const fill = document.createElement("div");
+    fill.className = "plan__bar-fill";
+    fill.style.clipPath = `inset(0 ${(100 - pct).toFixed(2)}% 0 0)`;
+    track.appendChild(fill);
+    wrap.appendChild(track);
+
+    const num = document.createElement("span");
+    num.className = "plan__bar-num";
+    // ⌛ = Restzeit bis Reset des Fensters. (Bewusst nicht das ↻ der
+    // session row, das dort "Kontext wurde verdichtet" bedeutet.)
+    num.textContent = `${pct}% · ⌛ ${fmtResetIn(win.reset_at)}`;
+    if (win.reset_at) {
+      const d = new Date(win.reset_at * 1000);
+      num.title =
+        `${pct}% verbraucht\n` +
+        `Fenster: ${(win.limit_window_seconds/3600).toFixed(0)} h\n` +
+        `Reset in ${fmtResetIn(win.reset_at)} (${d.toLocaleString("de-DE")})`;
+    }
+    wrap.appendChild(num);
+
+    return wrap;
+  }
+
+  function fmtResetIn(unixSec) {
+    if (!unixSec) return "—";
+    const sec = unixSec - Math.floor(Date.now() / 1000);
+    if (sec <= 0) return "jetzt";
+    if (sec < 3600) return `${Math.floor(sec/60)} min`;
+    if (sec < 86400) {
+      const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+      return m > 0 ? `${h} h ${m} min` : `${h} h`;
+    }
+    const d = Math.floor(sec/86400), h = Math.floor((sec%86400)/3600);
+    return h > 0 ? `${d} d ${h} h` : `${d} d`;
+  }
+
+  function creditsRow(credits) {
+    const row = document.createElement("div");
+    row.className = "plan__row";
+
+    const lbl = document.createElement("div");
+    lbl.className = "plan__label";
+    lbl.textContent = "Credits";
+    row.appendChild(lbl);
+
+    const text = document.createElement("div");
+    text.className = "plan__credits";
+    const balance = credits.unlimited ? "∞" : credits.balance;
+    const localMsg = (credits.approx_local_messages || []).join("–");
+    const cloudMsg = (credits.approx_cloud_messages || []).join("–");
+    text.textContent =
+      `Balance: ${balance}  ·  ≈ ${localMsg || "0"} lokale msg  ·  ≈ ${cloudMsg || "0"} cloud msg`;
+    if (credits.overage_limit_reached) {
+      text.style.color = "var(--red)";
+      text.title = "Overage-Limit erreicht";
+    }
+    row.appendChild(text);
+    return row;
+  }
+
+  function planErrorEl(err) {
+    const el = document.createElement("div");
+    el.className = "plan__error";
+    const code = err.code || "unknown";
+    const messages = {
+      disabled:        "Plan-Tracking ist deaktiviert.",
+      auth_missing:    "Nicht eingeloggt — Codex starten und einloggen.",
+      token_expired:   "Token abgelaufen — Codex starten, damit der Token refresht wird.",
+      network:         "Netzwerk-Problem beim Abrufen der Plan-Daten.",
+      timeout:         "Timeout beim Abrufen der Plan-Daten.",
+      binary_missing:  "codex-tokens-Binary nicht gefunden.",
+      binary_outdated: "codex-tokens ist zu alt für 'plan' — neue Version installieren.",
+      no_output:       "codex-tokens lieferte keine Ausgabe.",
+      bad_response:    "Unverständliche Antwort vom Plan-Endpoint.",
+      fetch_failed:    "Verbindung zum Hilfs-Server unterbrochen.",
+    };
+    el.textContent = `Plan: ${messages[code] || err.error || code}`;
+    el.title = err.error || "";
+    return el;
+  }
+
+  // --- settings popover wiring ---
+
+  PLAN_SETTINGS_BTN.addEventListener("click", (e) => {
+    e.stopPropagation();
+    PLAN_SETTINGS_EL.classList.toggle("hidden");
+  });
+  document.addEventListener("click", (e) => {
+    if (PLAN_SETTINGS_EL.classList.contains("hidden")) return;
+    if (e.target.closest("#plan-settings") || e.target.closest("#plan-settings-btn")) return;
+    PLAN_SETTINGS_EL.classList.add("hidden");
+  });
+
+  document.getElementById("ps-enabled").addEventListener("change", (e) => {
+    const checked = e.target.checked;
+    const consented = planSettings?.plan_widget?.consent_acknowledged === true;
+    if (checked && !consented) {
+      // First time turning it on — revert the box and surface the consent
+      // dialog. We don't persist enabled=true until the user confirms.
+      e.target.checked = false;
+      showConsentModal();
+      return;
+    }
+    patchPlanSettings({ enabled: checked }).then(() => {
+      if (checked) startPlanPolling();
+      else stopPlanPolling();
+      renderPlanWidget();
+    });
+  });
+
+  // --- consent modal ---
+
+  const CONSENT_EL = document.getElementById("plan-consent");
+  const CONSENT_OK = document.getElementById("plan-consent-ok");
+  const CONSENT_CANCEL = document.getElementById("plan-consent-cancel");
+
+  function showConsentModal() {
+    CONSENT_EL.classList.remove("hidden");
+    // Focus the safe choice ("Abbrechen") so an accidental Enter does no harm.
+    setTimeout(() => CONSENT_CANCEL.focus(), 50);
+  }
+  function hideConsentModal() {
+    CONSENT_EL.classList.add("hidden");
+  }
+
+  CONSENT_OK.addEventListener("click", () => {
+    // Atomic: record consent AND enable the widget in one patch.
+    patchPlanSettings({ enabled: true, consent_acknowledged: true }).then(() => {
+      document.getElementById("ps-enabled").checked = true;
+      hideConsentModal();
+      startPlanPolling();
+      renderPlanWidget();
+    });
+  });
+  CONSENT_CANCEL.addEventListener("click", hideConsentModal);
+  CONSENT_EL.querySelector(".modal__backdrop").addEventListener("click", hideConsentModal);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !CONSENT_EL.classList.contains("hidden")) {
+      hideConsentModal();
+    }
+  });
+
+  for (const k of ["main", "codex_spark", "code_review", "credits"]) {
+    document.getElementById(`ps-row-${k}`).addEventListener("change", (e) => {
+      patchPlanSettings({ rows: { [k]: e.target.checked } }).then(renderPlanWidget);
+    });
+  }
+
+  // Tick reset countdowns each second without re-fetching from the server.
+  setInterval(() => {
+    if (!planData || !planSettings?.plan_widget.enabled) return;
+    PLAN_WIDGET_EL.querySelectorAll(".plan__bar").forEach((bar) => {
+      // The countdown is regenerated on every full render; cheap to redo.
+    });
+    renderPlanWidget();
+  }, 30_000);
+
+  loadPlanSettings();
 })();

@@ -1,4 +1,5 @@
 mod locate;
+mod plan;
 mod proc;
 mod protocol;
 mod render;
@@ -13,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 use crate::locate::Selector;
 use crate::protocol::{EventMsg, RolloutItem};
@@ -24,6 +25,11 @@ use crate::state::TokenState;
 #[derive(Parser, Debug)]
 #[command(name = "codex-tokens", version)]
 struct Cli {
+    /// Subcommand selector. When absent, the binary runs in session-tail
+    /// mode and the flags below apply.
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Bind to a specific session by thread/session UUID.
     #[arg(long)]
     thread: Option<String>,
@@ -81,9 +87,34 @@ struct Cli {
     require_open: bool,
 }
 
-fn main() -> Result<()> {
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Query the account's plan-level rate-limit state via the ChatGPT
+    /// backend (uses the access token stored under ~/.codex/auth.json).
+    /// Emits the upstream JSON on stdout. Non-zero exit codes signal
+    /// distinct failure modes: 2 = not logged in, 3 = token expired,
+    /// 4 = network/backend error.
+    Plan,
+}
+
+fn main() {
     let cli = Cli::parse();
 
+    if matches!(cli.command, Some(Command::Plan)) {
+        std::process::exit(plan::run(cli.codex_home));
+        // Unreachable.
+    }
+
+    match run_session_mode(cli) {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("codex-tokens: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_session_mode(cli: Cli) -> Result<()> {
     let codex_home = match cli.codex_home.clone() {
         Some(p) => p,
         None => locate::codex_home()?,

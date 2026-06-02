@@ -11,3 +11,7 @@ CLAUDE.md
 # Python bytecode
 __pycache__/
 *.pyc
+
+# pdf-Dateien
+Script-README.pdf
+display/Display-README.pdf
