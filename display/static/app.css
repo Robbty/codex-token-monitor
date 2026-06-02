@@ -360,6 +360,9 @@ html, body {
   gap: 4px;
   font-size: 11px;
 }
+/* Override .hidden because .plan{display:flex} comes later in the
+ * stylesheet and would otherwise win the cascade. */
+.plan.hidden { display: none; }
 
 .plan__row {
   display: flex;
@@ -518,6 +521,9 @@ html, body {
   align-items: center;
   justify-content: center;
 }
+/* Same trap as .plan: .hidden alone loses the cascade against
+ * .modal{display:flex}. */
+.modal.hidden { display: none; }
 
 .modal__backdrop {
   position: absolute;
