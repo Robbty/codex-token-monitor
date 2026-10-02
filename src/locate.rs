@@ -42,6 +42,9 @@ pub fn resolve_filtered(
     if files.is_empty() {
         return Err(anyhow!("no rollout files under {}", sessions.display()));
     }
+    // One /proc walk for all candidates (see proc::write_held_rollouts).
+    let held = require_open.then(crate::proc::write_held_rollouts);
+    let is_open = |p: &Path| crate::proc::in_held_set(held.as_ref(), p);
 
     match sel {
         Selector::ThreadId(id) => {
@@ -52,7 +55,7 @@ pub fn resolve_filtered(
                     p.file_name()
                         .and_then(|n| n.to_str())
                         .is_some_and(|n| n.ends_with(&needle))
-                        && (!require_open || crate::proc::is_held_open(p))
+                        && is_open(p)
                 })
                 .map(|(p, _)| p)
                 .ok_or_else(|| anyhow!("no rollout for thread id {id}"))
@@ -63,7 +66,7 @@ pub fn resolve_filtered(
             for (path, _) in files {
                 if let Ok(Some(meta_cwd)) = read_session_cwd(&path)
                     && Path::new(&meta_cwd) == target
-                    && (!require_open || crate::proc::is_held_open(&path))
+                    && is_open(&path)
                 {
                     return Ok(path);
                 }
@@ -75,7 +78,7 @@ pub fn resolve_filtered(
         }
         Selector::MostRecent | Selector::All => {
             for (path, _) in files {
-                if !require_open || crate::proc::is_held_open(&path) {
+                if is_open(&path) {
                     return Ok(path);
                 }
             }
@@ -114,6 +117,9 @@ pub fn resolve_all(
         .into_iter()
         .filter(|(_, mtime)| *mtime >= cutoff)
         .collect();
+    // One /proc walk for all candidates (see proc::write_held_rollouts).
+    let held = require_open.then(crate::proc::write_held_rollouts);
+    let is_open = |p: &Path| crate::proc::in_held_set(held.as_ref(), p);
 
     match sel {
         Selector::ThreadId(_) | Selector::MostRecent => {
@@ -137,7 +143,7 @@ pub fn resolve_all(
             for (path, _) in fresh {
                 if let Ok(Some(meta_cwd)) = read_session_cwd(&path)
                     && Path::new(&meta_cwd) == target
-                    && (!require_open || crate::proc::is_held_open(&path))
+                    && is_open(&path)
                 {
                     matches.push(path);
                 }
@@ -156,7 +162,7 @@ pub fn resolve_all(
             // No cwd lookup needed, so this is much cheaper than the Cwd branch.
             let matches: Vec<PathBuf> = fresh
                 .into_iter()
-                .filter(|(p, _)| !require_open || crate::proc::is_held_open(p))
+                .filter(|(p, _)| is_open(p))
                 .map(|(p, _)| p)
                 .collect();
             if matches.is_empty() {

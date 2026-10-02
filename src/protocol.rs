@@ -11,6 +11,9 @@ use serde::Deserialize;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RolloutItem {
     SessionMeta { payload: SessionMetaPayload },
+    /// Written at the start of every turn; carries the model and reasoning
+    /// effort that turn runs with (both can change mid-session via /model).
+    TurnContext { payload: TurnContextPayload },
     EventMsg { payload: EventMsg },
     #[serde(other)]
     Other,
@@ -24,6 +27,20 @@ pub struct SessionMetaPayload {
     pub originator: Option<String>,
     #[serde(default)]
     pub cli_version: Option<String>,
+    /// ISO-8601 start of the session (e.g. `2026-09-25T12:01:32.611Z`).
+    #[serde(default)]
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TurnContextPayload {
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Reasoning effort (`low`/`medium`/`high`/`xhigh`, absent for models
+    /// without reasoning). Kept as a raw value so an unexpected shape in a
+    /// future Codex version only loses the effort, not the whole line.
+    #[serde(default)]
+    pub effort: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

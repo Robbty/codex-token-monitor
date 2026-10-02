@@ -10,8 +10,9 @@
 //! then fall back to the mtime heuristic). Reads only the entries the current
 //! user owns — no elevated privileges needed.
 
+use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Returns true iff some process on this machine currently holds the rollout
 /// file open **for writing**. Read-only handles (e.g. from our own
@@ -58,6 +59,53 @@ pub fn is_held_open(rollout: &Path) -> bool {
     }
 
     false
+}
+
+/// All `rollout-*.jsonl` files some process currently holds open **for
+/// writing**, as canonical paths. One `/proc` walk for any number of
+/// candidates — calling `is_held_open` per file walks `/proc` once per file,
+/// which with a few hundred rollouts takes seconds of CPU per discovery scan.
+pub fn write_held_rollouts() -> HashSet<PathBuf> {
+    let mut held = HashSet::new();
+    let proc_dir = match fs::read_dir("/proc") {
+        Ok(d) => d,
+        Err(_) => return held,
+    };
+    for entry in proc_dir.flatten() {
+        let name = entry.file_name();
+        if !name.to_str().is_some_and(|s| s.bytes().all(|b| b.is_ascii_digit())) {
+            continue;
+        }
+        let pid_path = entry.path();
+        let fds = match fs::read_dir(pid_path.join("fd")) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        for fd in fds.flatten() {
+            let Ok(link) = fs::read_link(fd.path()) else {
+                continue;
+            };
+            let is_rollout = link.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                n.starts_with("rollout-") && n.ends_with(".jsonl")
+            });
+            if is_rollout
+                && !held.contains(&link)
+                && fd_opened_for_write(&pid_path.join("fdinfo").join(fd.file_name()))
+            {
+                held.insert(link);
+            }
+        }
+    }
+    held
+}
+
+/// Membership test against a `write_held_rollouts()` set (`None` = no
+/// filtering requested).
+pub fn in_held_set(held: Option<&HashSet<PathBuf>>, rollout: &Path) -> bool {
+    match held {
+        None => true,
+        Some(set) => fs::canonicalize(rollout).is_ok_and(|p| set.contains(&p)),
+    }
 }
 
 /// Parse `/proc/<pid>/fdinfo/<fd>` and check the `flags:` line for write access.

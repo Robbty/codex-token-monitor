@@ -471,6 +471,21 @@ fn apply(state: &mut TokenState, item: RolloutItem) {
         RolloutItem::SessionMeta { payload } => {
             state.session_id = Some(payload.id);
             state.session_cwd = payload.cwd;
+            if state.started_at.is_none() {
+                state.started_at = payload.timestamp;
+            }
+        }
+        RolloutItem::TurnContext { payload } => {
+            if payload.model.is_some() {
+                state.model = payload.model;
+            }
+            // Overwrite even with None: a switch to a model without
+            // reasoning must not keep showing the previous effort.
+            state.effort = payload
+                .effort
+                .as_ref()
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
         }
         RolloutItem::EventMsg {
             payload: EventMsg::TokenCount(ev),

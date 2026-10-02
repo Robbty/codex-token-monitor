@@ -17,6 +17,12 @@ pub struct TokenState {
     /// `total_token_usage` already includes the tokens consumed by those
     /// compaction turns, so this counter just adds visibility.
     pub compact_count: i64,
+    /// ISO-8601 session start from `session_meta.timestamp`.
+    pub started_at: Option<String>,
+    /// Model of the most recent turn (`turn_context.model`).
+    pub model: Option<String>,
+    /// Reasoning effort of the most recent turn (`turn_context.effort`).
+    pub effort: Option<String>,
 }
 
 impl TokenState {

@@ -39,6 +39,15 @@ fn render_kv(s: &TokenState, multi: bool) -> String {
     if let Some(active) = s.session_active {
         push_kv(&mut out, "session_active", if active { "true" } else { "false" });
     }
+    if let Some(started) = &s.started_at {
+        push_kv(&mut out, "started_at", started);
+    }
+    if let Some(model) = &s.model {
+        push_kv(&mut out, "model", model);
+    }
+    if let Some(effort) = &s.effort {
+        push_kv(&mut out, "effort", effort);
+    }
     push_kv(&mut out, "compact_count", &s.compact_count.to_string());
 
     if let Some(info) = &s.info {
@@ -160,6 +169,9 @@ fn render_json(s: &TokenState) -> String {
         "session_id": s.session_id,
         "session_cwd": s.session_cwd,
         "session_active": s.session_active,
+        "started_at": s.started_at,
+        "model": s.model,
+        "effort": s.effort,
         "compact_count": s.compact_count,
         "context_window": s.context_window(),
         "percent_left": s.percent_left(),
