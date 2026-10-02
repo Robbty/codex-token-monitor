@@ -81,6 +81,45 @@
     <p class="empty__hint">Sobald du <code>codex</code> startest, taucht sie hier auf.</p>
   </section>
 
+  <template id="ghost-template">
+    <article class="session session--ghost">
+      <div class="ghost__line">
+        <span class="ghost__badge" title="Codex-Prozess ohne aktive Session (noch kein erster Turn gesendet)">Geister-TUI</span>
+        <span class="cwd ghost__cwd"></span>
+        <span class="ghost__pid"></span>
+        <span class="ghost__age"></span>
+        <span class="actions">
+          <button class="btn btn--open" title="Verzeichnis im Dateimanager öffnen">📁</button>
+          <button class="btn btn--focus" title="Terminal/IDE-Fenster zu diesem Verzeichnis nach vorne holen">⚡</button>
+          <button class="btn btn--kill" title="Diese Geister-TUI beenden (SIGTERM)">🛑</button>
+        </span>
+      </div>
+    </article>
+  </template>
+
+  <div id="kill-confirm" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="kill-confirm-title">
+    <div class="modal__backdrop"></div>
+    <div class="modal__box">
+      <h2 id="kill-confirm-title" class="modal__title">Codex-Session beenden?</h2>
+      <div class="modal__body">
+        <p id="kill-confirm-detail">…</p>
+        <p>
+          Das Tool schickt ein <code>SIGTERM</code> an den Prozess. Codex
+          beendet sich daraufhin so wie beim Schließen des Terminal-Fensters
+          (Rollout wird ordentlich geschrieben).
+        </p>
+        <p class="modal__hint">
+          Mit <code>codex resume</code> kann die Session später jederzeit
+          wieder aufgenommen werden.
+        </p>
+      </div>
+      <div class="modal__actions">
+        <button id="kill-confirm-cancel" class="btn">Abbrechen</button>
+        <button id="kill-confirm-ok" class="btn btn--danger">Beenden</button>
+      </div>
+    </div>
+  </div>
+
   <template id="row-template">
     <article class="session">
       <div class="bar" title="">
@@ -107,6 +146,7 @@
             <button class="btn btn--focus" title="Terminal/IDE-Fenster zu diesem Verzeichnis nach vorne holen (per wmctrl)">⚡</button>
             <button class="btn btn--path" title="Pfad zur Rollout-Datei (~/.codex/sessions/…) in die Zwischenablage kopieren">📋</button>
             <button class="btn btn--rollover" title="Handover-Prompt für sauberen Session-Rollover in die Zwischenablage kopieren">↻</button>
+            <button class="btn btn--kill" title="Diese Codex-Session beenden (SIGTERM an den TUI-Prozess)">🛑</button>
           </span>
         </div>
       </div>

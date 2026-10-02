@@ -10,6 +10,8 @@
   const connEl = document.getElementById("conn");
   const rowTpl = document.getElementById("row-template");
   const workerToggle = document.getElementById("show-workers");
+  // Ghost codex TUIs (process without rollout), see renderGhosts() below.
+  let ghosts = [];
 
   // Workers are Codex-Desktop background helpers: they emit token-count
   // events without a model_context_window. The dashboard hides them by
@@ -111,6 +113,17 @@
       postJson("/copy", { text: prompt })
         .then(() => toast("Rollover-Prompt kopiert (in Codex einfügen)"))
         .catch(() => toast("Kopieren fehlgeschlagen", true));
+    });
+    rowEl.querySelector(".btn--kill").addEventListener("click", () => {
+      const sid = rowEl.dataset.sid;
+      const snap = sessions.get(sid);
+      const cwd = snap?.session_cwd || "(unbekannt)";
+      askKillConfirmation({
+        kind: "session",
+        title: "Codex-Session beenden?",
+        detail: `${shortId(sid)} · ${cwd}`,
+        payload: { session_id: sid },
+      });
     });
   }
 
@@ -240,7 +253,8 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
 
     // 3. Remove DOM rows that are no longer visible.
     const visibleIds = new Set(visible.map((s) => s.session_id));
-    sessionsEl.querySelectorAll(".session").forEach((row) => {
+    // Ghost cards (no data-sid) are owned by renderGhosts(), not by us.
+    sessionsEl.querySelectorAll(".session:not(.session--ghost)").forEach((row) => {
       if (!visibleIds.has(row.dataset.sid)) row.remove();
     });
 
@@ -282,7 +296,8 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
           ? `${realCount} aktiv (+${workerCount} Worker)`
           : `${realCount} aktiv`;
     }
-    emptyEl.classList.toggle("hidden", visible.length > 0);
+    // A ghost TUI on screen means "not empty" either.
+    emptyEl.classList.toggle("hidden", visible.length > 0 || ghosts.length > 0);
     if (scope !== null && visible.length > 0) {
       cwdEl.textContent = scope;
       cwdEl.title = scope;
@@ -339,6 +354,10 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
       try {
         const event = JSON.parse(ev.data);
         if (event.type === "snapshot") applySnapshot(event.data);
+        // Forward to anyone listening (e.g. the ghost-card renderer
+        // defined later in this file). Using a custom DOM event keeps
+        // those handlers loosely coupled from this listener.
+        document.dispatchEvent(new CustomEvent("ctm-sse-event", { detail: event }));
       } catch {
         /* ignore */
       }
@@ -812,4 +831,145 @@ damit eine neue Session mit HANDOVER.md als Kontext starten kann.
   }, 30_000);
 
   loadPlanSettings();
+
+  // ---------------------------------------------------------------------
+  // Kill: confirmation modal + POST /kill
+  // ---------------------------------------------------------------------
+
+  const KILL_MODAL    = document.getElementById("kill-confirm");
+  const KILL_DETAIL   = document.getElementById("kill-confirm-detail");
+  const KILL_OK       = document.getElementById("kill-confirm-ok");
+  const KILL_CANCEL   = document.getElementById("kill-confirm-cancel");
+  let killPending = null;  // { kind, payload, detail }
+
+  // Open the kill-confirm modal pre-populated with a detail line. Caller
+  // passes the payload that will be sent to POST /kill on confirm.
+  function askKillConfirmation({ kind, title, detail, payload }) {
+    killPending = { kind, payload };
+    document.getElementById("kill-confirm-title").textContent = title;
+    KILL_DETAIL.textContent = detail;
+    KILL_MODAL.classList.remove("hidden");
+    setTimeout(() => KILL_CANCEL.focus(), 50);
+  }
+  function hideKillModal() {
+    KILL_MODAL.classList.add("hidden");
+    killPending = null;
+  }
+
+  KILL_OK.addEventListener("click", () => {
+    if (!killPending) { hideKillModal(); return; }
+    const { payload, kind } = killPending;
+    postJson("/kill", payload)
+      .then((r) => {
+        const pidText = r?.pid ? ` (pid ${r.pid})` : "";
+        toast(kind === "ghost"
+          ? `Geister-TUI beendet${pidText}`
+          : `Session beendet${pidText}`);
+      })
+      .catch((e) => toast(`Beenden fehlgeschlagen: ${e?.message || e}`, true));
+    hideKillModal();
+  });
+  KILL_CANCEL.addEventListener("click", hideKillModal);
+  KILL_MODAL.querySelector(".modal__backdrop").addEventListener("click", hideKillModal);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !KILL_MODAL.classList.contains("hidden")) {
+      hideKillModal();
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // Ghost TUIs: render greyed-out cards above the regular sessions list
+  // ---------------------------------------------------------------------
+  //
+  // A "ghost" is a codex TUI process with no rollout file open (= no
+  // active session, even though the process is alive). The server scans
+  // /proc every 5 s and broadcasts the full list; we render a small
+  // line per ghost with a kill button so they're easy to clean up.
+
+  const GHOST_TPL = document.getElementById("ghost-template");
+
+  function fmtAge(epochSec) {
+    if (!epochSec) return "";
+    const sec = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
+    if (sec < 60)    return `${sec}s`;
+    if (sec < 3600)  return `${Math.floor(sec/60)} min`;
+    if (sec < 86400) return `${Math.floor(sec/3600)} h`;
+    return `${Math.floor(sec/86400)} d`;
+  }
+
+  function applyGhosts(list) {
+    ghosts = Array.isArray(list) ? list : [];
+    renderGhosts();
+  }
+
+  function renderGhosts() {
+    // Remove existing ghost cards.
+    sessionsEl.querySelectorAll(".session--ghost").forEach((el) => el.remove());
+    // Render fresh ones at the TOP of the sessions container.
+    // Sort newest-first so the most likely "I just opened this and forgot"
+    // candidate stands out.
+    const sorted = [...ghosts].sort((a, b) => (b.started_at || 0) - (a.started_at || 0));
+    for (const g of sorted) {
+      const frag = GHOST_TPL.content.cloneNode(true);
+      const el = frag.querySelector(".session--ghost");
+      el.dataset.pid = String(g.pid);
+      el.querySelector(".ghost__cwd").textContent = g.cwd || "(unbekannt)";
+      el.querySelector(".ghost__cwd").title = g.cwd || "";
+      el.querySelector(".ghost__pid").textContent = `pid ${g.pid}`;
+      el.querySelector(".ghost__age").textContent = `⌚ ${fmtAge(g.started_at)}`;
+      el.querySelector(".btn--open").addEventListener("click", () => {
+        if (!g.cwd) return;
+        postJson("/open-dir", { path: g.cwd })
+          .then(() => toast("Verzeichnis geöffnet"))
+          .catch(() => toast("Konnte Verzeichnis nicht öffnen", true));
+      });
+      el.querySelector(".btn--focus").addEventListener("click", () => {
+        if (!g.cwd) return;
+        postJson("/focus-terminal", { cwd: g.cwd })
+          .then((r) => toast(r.warning || "Terminal fokussiert"))
+          .catch(() => toast("Konnte Fenster nicht fokussieren", true));
+      });
+      el.querySelector(".btn--kill").addEventListener("click", () => {
+        askKillConfirmation({
+          kind: "ghost",
+          title: "Geister-TUI beenden?",
+          detail: `pid ${g.pid} · ${g.cwd || "(unbekannt)"}`,
+          payload: { pid: g.pid },
+        });
+      });
+      sessionsEl.insertBefore(el, sessionsEl.firstChild);
+    }
+    // Empty state should also disappear if any ghost is present, even
+    // without regular sessions — otherwise we'd show "Keine Sessions"
+    // next to a ghost card, which would be confusing.
+    if (ghosts.length > 0) emptyEl.classList.add("hidden");
+  }
+
+  // Tick the age timer once a second.
+  setInterval(() => {
+    sessionsEl.querySelectorAll(".session--ghost").forEach((el) => {
+      const g = ghosts.find((x) => String(x.pid) === el.dataset.pid);
+      if (!g) return;
+      el.querySelector(".ghost__age").textContent = `⌚ ${fmtAge(g.started_at)}`;
+    });
+  }, 1000);
+
+  // ---------------------------------------------------------------------
+  // Hook ghost events into the existing SSE listener
+  // ---------------------------------------------------------------------
+  // The connect() above already handles "snapshot" events; we extend its
+  // onmessage with our additional "ghosts" event type via an interceptor.
+  // Since connect() is already running, we patch the listener by overriding
+  // the EventSource's existing handler at the next message — simpler is to
+  // teach `applySnapshot` etc. to handle ghosts there, but the IIFE pattern
+  // keeps things contained. Easiest: hook a second listener on document
+  // and have the original es.onmessage forward via a custom event.
+  //
+  // Pragmatic approach: replace connect()'s onmessage from outside via a
+  // tiny adapter. The conn we created earlier is in scope.
+  document.addEventListener("ctm-sse-event", (e) => {
+    const ev = e.detail;
+    if (ev?.type === "ghosts") applyGhosts(ev.data);
+  });
+
 })();

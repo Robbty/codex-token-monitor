@@ -21,7 +21,9 @@ import http.server
 import json
 import os
 import queue
+import re
 import shlex
+import signal
 import socketserver
 import subprocess
 import sys
@@ -29,6 +31,60 @@ import threading
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+# Heuristic for "this process IS a codex TUI". Matches both the JS wrapper
+# (`node …/bin/codex …`) and the native codex binary inside the npm package
+# (`…/codex-linux-x64/…/bin/codex`). We want the *native* binary because
+# it's the one that opens the rollout file; the node wrapper does not.
+_CODEX_NATIVE_RE = re.compile(r"/codex-linux-(?:x64|arm64)/.+/bin/codex(\s|$)")
+
+# Subcommands that run the native binary WITHOUT an interactive session
+# (`codex app-server` backs the VS Code extension, `codex exec` is headless,
+# …). Such processes never are a "ghost TUI" and must not be killable via
+# the 🛑 button. Interactive forms: bare `codex [PROMPT]`, `resume`, `fork`.
+_CODEX_NON_TUI_SUBCOMMANDS = frozenset({
+    "exec", "e", "review", "login", "logout", "mcp", "mcp-server", "plugin",
+    "app-server", "remote-control", "completion", "update", "doctor",
+    "sandbox", "debug", "apply", "a", "queue", "archive", "delete",
+    "migrate-rollouts", "unarchive", "cloud", "exec-server", "features",
+    "help", "agents", "proto", "responses-api-proxy", "stdio-to-uds",
+})
+
+
+def _read_cmdline(pid: int | str) -> list[str] | None:
+    """argv of a process, None if unreadable (gone / no permission)."""
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return None
+    return [a.decode("utf-8", errors="replace") for a in raw.split(b"\x00") if a]
+
+
+def _is_codex_tui(argv: list[str] | None) -> bool:
+    """True for the native codex binary running an interactive TUI."""
+    if not argv or not _CODEX_NATIVE_RE.search(" ".join(argv[:1]) + " "):
+        return False
+    first_positional = next((a for a in argv[1:] if not a.startswith("-")), None)
+    return first_positional not in _CODEX_NON_TUI_SUBCOMMANDS
+
+
+def _proc_started_at(pid: int | str) -> float:
+    """Process start as epoch seconds: field 22 of /proc/<pid>/stat (clock
+    ticks since boot) + btime from /proc/stat. 0.0 if unknown. (The mtime of
+    /proc/<pid>/stat is NOT the start time — procfs sets inode times when
+    the entry is first looked up.)"""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        fields = stat[stat.rfind(")") + 1:].split()  # comm may contain spaces
+        ticks = int(fields[19])
+        btime = next(
+            int(line.split()[1])
+            for line in Path("/proc/stat").read_text().splitlines()
+            if line.startswith("btime ")
+        )
+        return btime + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration):
+        return 0.0
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_PORT = 8765
@@ -113,6 +169,12 @@ _sessions: dict[str, dict] = {}
 # Per-subscriber queues. Each SSE connection pulls from its own queue.
 _subscribers_lock = threading.Lock()
 _subscribers: list[queue.Queue] = []
+
+# Ghost codex TUIs — processes that exist but hold no rollout file open
+# (no card in the regular sessions list). Refreshed by _ghost_scanner_thread,
+# replaced as a whole on each scan tick. UI gets the full list each time.
+_ghosts_lock = threading.Lock()
+_ghosts: list[dict] = []
 
 # Cache: session_id -> absolute rollout path. The lookup walks
 # ~/.codex/sessions, so we only do it once per session.
@@ -308,13 +370,24 @@ def _find_rollout_for_sid(sid: str) -> Path | None:
 
 def _is_held_open(rollout: Path) -> bool:
     """Linux-only: returns True if any process holds rollout with a write FD."""
+    return _find_pid_holding(rollout) is not None
+
+
+def _find_pid_holding(rollout: Path) -> int | None:
+    """Walk /proc and return the first PID that has `rollout` open with a
+    write FD. Returns None if nothing matches (file closed / non-Linux).
+    Same /proc/fdinfo flag-bits parsing as _is_held_open before; we just
+    surface the PID instead of a boolean. Read-only handles are ignored
+    on purpose — we (codex-tokens itself) read these files and would
+    otherwise show up as "active".
+    """
     try:
         target = rollout.resolve()
     except OSError:
-        return False
+        return None
     proc_root = Path("/proc")
     if not proc_root.is_dir():
-        return False
+        return None
     for pid_dir in proc_root.iterdir():
         if not pid_dir.name.isdigit():
             continue
@@ -329,7 +402,6 @@ def _is_held_open(rollout: Path) -> bool:
                     continue
             except OSError:
                 continue
-            # Check write flag in fdinfo.
             fdinfo = pid_dir / "fdinfo" / fd.name
             try:
                 content = fdinfo.read_text()
@@ -342,9 +414,130 @@ def _is_held_open(rollout: Path) -> bool:
                     except ValueError:
                         break
                     if flags & 0o3:
-                        return True
+                        try:
+                            return int(pid_dir.name)
+                        except ValueError:
+                            return None
                     break
+    return None
+
+
+def _find_codex_processes() -> list[dict]:
+    """Enumerate native codex-binary processes via /proc. Returns dicts with
+    pid, cwd, started_at (epoch). Includes ALL codex TUIs — even ones that
+    haven't started a session yet (no rollout file).
+    """
+    out: list[dict] = []
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        return out
+    for pid_dir in proc_root.iterdir():
+        if not pid_dir.name.isdigit():
+            continue
+        # Match against the *cmdline* (NUL-separated argv). The native
+        # codex binary lives under codex-linux-x64/...; the node wrapper
+        # is a different process and gets filtered out here, as are
+        # non-interactive subcommands (app-server, exec, …).
+        argv = _read_cmdline(pid_dir.name)
+        if not _is_codex_tui(argv):
+            continue
+        try:
+            cwd = str((pid_dir / "cwd").resolve())
+        except (OSError, PermissionError):
+            cwd = ""
+        pid = int(pid_dir.name)
+        out.append({
+            "pid": pid,
+            "cwd": cwd,
+            "started_at": _proc_started_at(pid),
+            "cmdline": " ".join(argv)[:200],
+        })
+    return out
+
+
+def _find_ghost_codex_processes(known_session_pids: set[int]) -> list[dict]:
+    """Codex TUIs that hold NO rollout file open with write access — i.e.
+    sessions that exist as a process but have no card in the display.
+    Two reasons this happens in practice:
+      1. TUI was started, but no user turn submitted yet (no JSONL created)
+      2. Session was finished but TUI window still open at prompt
+    `known_session_pids` is the set of PIDs we already render as active
+    cards, so we can avoid double-listing them.
+    """
+    ghosts = []
+    for p in _find_codex_processes():
+        if p["pid"] in known_session_pids:
+            continue
+        # Recheck: does THIS PID hold any rollout-*.jsonl with a write FD?
+        if _pid_holds_any_rollout(p["pid"]):
+            continue
+        ghosts.append({
+            "pid": p["pid"],
+            "cwd": p["cwd"],
+            "started_at": p["started_at"],
+        })
+    return ghosts
+
+
+def _pid_holds_any_rollout(pid: int) -> bool:
+    """True if the given PID has any rollout-*.jsonl open with a write FD."""
+    fd_dir = Path(f"/proc/{pid}/fd")
+    fdinfo_dir = Path(f"/proc/{pid}/fdinfo")
+    try:
+        entries = list(fd_dir.iterdir())
+    except (PermissionError, FileNotFoundError):
+        return False
+    for fd in entries:
+        try:
+            target = fd.resolve()
+        except OSError:
+            continue
+        if "rollout-" not in target.name or not target.name.endswith(".jsonl"):
+            continue
+        try:
+            content = (fdinfo_dir / fd.name).read_text()
+        except (PermissionError, FileNotFoundError):
+            continue
+        for line in content.splitlines():
+            if line.startswith("flags:"):
+                try:
+                    flags = int(line.split(":", 1)[1].strip(), 8)
+                except ValueError:
+                    break
+                if flags & 0o3:
+                    return True
+                break
     return False
+
+
+def _ghost_scanner_thread() -> None:
+    """Periodically broadcast the list of ghost codex TUIs to all SSE
+    subscribers. Full-replace semantics: each tick sends the COMPLETE
+    current list, so the UI can simply reflect what's there without
+    diffing.
+    """
+    global _ghosts
+    while True:
+        time.sleep(5)
+        # Resolve which PIDs already have a rendered session card.
+        with _state_lock:
+            session_sids = [s for s in _sessions.values() if s.get("session_active")]
+        known_pids: set[int] = set()
+        for snap in session_sids:
+            sid = snap.get("session_id")
+            if not sid:
+                continue
+            path = _find_rollout_for_sid(sid)
+            if not path:
+                continue
+            pid = _find_pid_holding(path)
+            if pid:
+                known_pids.add(pid)
+        ghosts = _find_ghost_codex_processes(known_pids)
+        with _ghosts_lock:
+            _ghosts = ghosts
+        # Always broadcast — cheap and lets the UI keep its clock fresh.
+        _broadcast({"type": "ghosts", "data": ghosts})
 
 
 # --- HTTP handler ---------------------------------------------------------
@@ -409,6 +602,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_copy(body)
         elif self.path == "/settings":
             self._handle_update_settings(body)
+        elif self.path == "/kill":
+            self._handle_kill(body)
         else:
             self.send_error(404, "not found")
 
@@ -460,6 +655,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 snapshots = list(_sessions.values())
             for snap in snapshots:
                 self._sse_send({"type": "snapshot", "data": snap})
+            # Initial ghost list — without it, freshly-opened browsers would
+            # show no ghosts until the next 5-second scanner tick.
+            with _ghosts_lock:
+                self._sse_send({"type": "ghosts", "data": list(_ghosts)})
 
             last_heartbeat = time.time()
             while True:
@@ -580,6 +779,55 @@ class Handler(http.server.BaseHTTPRequestHandler):
             check=False,
         )
         self._json_ok()
+
+    def _handle_kill(self, body: dict) -> None:
+        """Send SIGTERM to a codex TUI process. Body shape:
+            { "session_id": "<uuid>" }   → look up the PID via the rollout file
+            { "pid": <int> }             → use the PID directly (ghost TUIs)
+        SIGTERM gives codex a chance to flush its rollout cleanly — same
+        effect as closing the terminal window the TUI is running in.
+        """
+        pid = body.get("pid")
+        sid = body.get("session_id")
+
+        if not pid and sid:
+            rollout = _find_rollout_for_sid(sid)
+            if not rollout:
+                # HTTP status-line must be ASCII/latin-1, no ellipsis here.
+                self.send_error(404, f"no rollout file for session {sid[:8]}...")
+                return
+            pid = _find_pid_holding(rollout)
+            if not pid:
+                self.send_error(404, "no process holds that session open")
+                return
+
+        try:
+            pid_int = int(pid)
+        except (TypeError, ValueError):
+            self.send_error(400, "invalid pid")
+            return
+
+        # Sanity check: only kill interactive codex TUIs. Without this, a
+        # malicious POST could steer the server into killing arbitrary user
+        # processes (or the app-server behind the VS Code extension).
+        argv = _read_cmdline(pid_int)
+        if argv is None:
+            self.send_error(404, f"pid {pid_int} not found")
+            return
+        if not _is_codex_tui(argv):
+            self.send_error(403, f"pid {pid_int} is not a codex TUI process")
+            return
+
+        try:
+            os.kill(pid_int, signal.SIGTERM)
+        except ProcessLookupError:
+            self.send_error(404, f"pid {pid_int} already gone")
+            return
+        except PermissionError:
+            self.send_error(403, f"no permission to signal pid {pid_int}")
+            return
+        sys.stderr.write(f"[server] sent SIGTERM to pid {pid_int}\n")
+        self._json_ok(extra={"pid": pid_int})
 
     def _handle_copy(self, body: dict) -> None:
         text = body.get("text", "")
@@ -710,6 +958,8 @@ def main() -> int:
     t1.start()
     t2 = threading.Thread(target=_sweeper_thread, daemon=True)
     t2.start()
+    t3 = threading.Thread(target=_ghost_scanner_thread, daemon=True)
+    t3.start()
 
     server = ThreadedHTTPServer(("127.0.0.1", args.port), Handler)
     sys.stderr.write(f"[server] listening on http://127.0.0.1:{args.port}\n")

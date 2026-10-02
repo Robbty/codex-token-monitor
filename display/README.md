@@ -90,6 +90,7 @@ Zwischenablage — praktisch für `codex-tokens --thread <UUID>`.
 | **⚡** | Holt das passende IDE-/Terminal-Fenster nach vorne (`wmctrl`) — bevorzugt VS Code, Cursor, JetBrains usw.; ignoriert Dateimanager |
 | **📋** | Kopiert den absoluten Pfad zur Rollout-Datei (`~/.codex/sessions/…/rollout-*.jsonl`) in die Zwischenablage |
 | **↻** | Kopiert einen Handover-Prompt in die Zwischenablage — in Codex einfügen für einen sauberen Session-Rollover |
+| **🛑** | **Beendet** die Codex-Session — Bestätigungs-Dialog erscheint, dann SIGTERM an den TUI-Prozess. Effekt entspricht dem Schließen des Terminal-Fensters: das Rollout wird sauber abgeschlossen, mit `codex resume` jederzeit fortsetzbar. Default-Fokus auf „Abbrechen" — versehentliches Enter ist harmlos. |
 
 ## Bedeutung der Zahlen
 
@@ -129,6 +130,30 @@ zählen auf dasselbe Rate-Limit / Budget wie echte Chats. Falls du
 hauptsächlich ein Modell mit anderer Kontextgröße verwendest, kannst du
 den Fallback-Default in `display/static/app.js` (Konstante
 `ASSUMED_CONTEXT_WINDOW`) anpassen.
+
+## Geister-TUIs
+
+Manchmal hast du ein Codex-Terminal offen, in dem du noch **nichts** eingegeben
+hast — die TUI wartet auf den ersten Turn. So eine Session hat noch **kein**
+Rollout-File und taucht in der normalen Session-Liste nicht auf. Das Display
+erkennt diesen Zustand trotzdem und zeigt für jede solche TUI eine
+schmale, gelb umrandete **„Geister-TUI"-Karte** ganz oben:
+
+```text
+[ Geister-TUI ]  /home/peter/work/xy  pid 1756458  ⌚ 30 min  📁 ⚡ 🛑
+```
+
+- Erkennung läuft alle 5 Sekunden über `/proc` — Codex-Native-Binaries ohne
+  Schreib-Handle auf eine `rollout-*.jsonl` werden gesammelt.
+- Buttons: 📁 öffnet das Arbeitsverzeichnis, ⚡ holt das Terminal nach
+  vorne (gleiche Heuristik wie bei den Session-Karten), 🛑 beendet die TUI
+  per SIGTERM nach Bestätigungs-Dialog.
+- Sobald du in der TUI etwas eingibst und Enter drückst, schreibt Codex
+  ein Rollout an, die Geister-Karte verschwindet, und eine normale
+  Session-Karte erscheint stattdessen.
+
+Das ist besonders praktisch, wenn ein versehentlich gestartetes Codex im
+Hintergrund Resources frisst, ohne dass du noch weißt, wo es lief.
 
 ## Plan-Anzeige (kontoseitige Rate-Limits)
 
