@@ -15,12 +15,18 @@
       <div class="topbar__meta">
         <span id="count">0 aktiv</span>
         <span id="cwd" title="Beobachtetes Projektverzeichnis"></span>
+        <select id="sort-mode" class="sort-select" title="Sortierung der Session-Karten">
+          <option value="usage">Auslastung</option>
+          <option value="dir">Ort</option>
+          <option value="start">Startzeit</option>
+        </select>
         <label class="toggle"
                title="Hintergrund-Worker der Codex Desktop App einblenden (sie verbrauchen Token, melden aber kein Kontextfenster)">
           <input type="checkbox" id="show-workers" />
           <span class="toggle__slider"></span>
           <span class="toggle__label">Worker</span>
         </label>
+        <button id="chats-btn" class="help-btn" title="Letzte Chats anzeigen">🕘</button>
         <button id="plan-settings-btn" class="help-btn" title="Plan-Anzeige konfigurieren">⚙</button>
         <button id="help-btn" class="help-btn" title="Bedienungsanleitung anzeigen">📖</button>
         <span id="conn" class="conn conn--disconnected" title="Verbindung zum Server">●</span>
@@ -76,6 +82,11 @@
 
   <main id="sessions" class="sessions"></main>
 
+  <section id="loading" class="empty loading-pulse">
+    <p id="loading-msg">Verbinde mit dem Server …</p>
+    <p class="empty__hint">Aktuelle Session-Daten werden geladen.</p>
+  </section>
+
   <section id="empty" class="empty hidden">
     <p>Keine aktiven Codex-Sessions in diesem Verzeichnis.</p>
     <p class="empty__hint">Sobald du <code>codex</code> startest, taucht sie hier auf.</p>
@@ -104,9 +115,10 @@
       <div class="modal__body">
         <p id="kill-confirm-detail">…</p>
         <p>
-          Das Tool schickt ein <code>SIGTERM</code> an den Prozess. Codex
-          beendet sich daraufhin so wie beim Schließen des Terminal-Fensters
-          (Rollout wird ordentlich geschrieben).
+          Das Tool schickt ein <code>SIGTERM</code> an den Codex-Prozess im
+          Terminal. Codex beendet sich daraufhin so wie beim Schließen des
+          Terminal-Fensters. Ab Codex 0.160 schreibt ein gemeinsamer
+          Hintergrund-Server die Session; er gibt sie kurz danach frei.
         </p>
         <p class="modal__hint">
           Mit <code>codex resume</code> kann die Session später jederzeit
@@ -131,6 +143,7 @@
       <div class="meta">
         <div class="meta__line meta__line--top">
           <span class="cwd" title=""></span>
+          <span class="modelinfo hidden" title=""></span>
           <span class="status status--unknown" title="Lifecycle-Status">●</span>
           <span class="idle" title="Seit letzter Aktivität"></span>
         </div>
@@ -145,10 +158,11 @@
             <button class="btn btn--open" title="Verzeichnis im Dateimanager öffnen">📁</button>
             <button class="btn btn--focus" title="Terminal/IDE-Fenster zu diesem Verzeichnis nach vorne holen (per wmctrl)">⚡</button>
             <button class="btn btn--path" title="Pfad zur Rollout-Datei (~/.codex/sessions/…) in die Zwischenablage kopieren">📋</button>
-            <button class="btn btn--rollover" title="Handover-Prompt für sauberen Session-Rollover in die Zwischenablage kopieren">↻</button>
+            <button class="btn btn--rollover" title="Handover direkt in der Session erzeugen: Prompt wird ins Terminal der Session eingefügt und abgeschickt (Fallback: nur kopieren)">↻</button>
             <button class="btn btn--kill" title="Diese Codex-Session beenden (SIGTERM an den TUI-Prozess)">🛑</button>
           </span>
         </div>
+        <div class="meta__line handover hidden"></div>
       </div>
     </article>
   </template>

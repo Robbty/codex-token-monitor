@@ -77,6 +77,14 @@
     otherBtn.textContent = "📚 Projekt-README öffnen";
     otherBtn.dataset.target = "/help?doc=main";
   }
+
+  // Fenster auf allen Arbeitsflächen anzeigen (nach dem Setzen des Titels;
+  // abschaltbar über windows.sticky in ~/.config/codex-token-monitor/config.json)
+  fetch("/sticky", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: document.title }),
+  }).catch(() => {});
   otherBtn.addEventListener("click", () => {
     const target = otherBtn.dataset.target;
     const name = target.includes("doc=main")
@@ -94,6 +102,13 @@
       const md = await r.text();
       if (typeof marked !== "undefined" && typeof marked.parse === "function") {
         el.innerHTML = marked.parse(md, { gfm: true, breaks: false });
+        // Überschriften-IDs wie auf GitHub (marked setzt keine), damit
+        // Links wie [..](#wie-der-monitor-…) im Fenster springen.
+        el.querySelectorAll("h1, h2, h3, h4").forEach((h) => {
+          h.id = h.textContent.trim().toLowerCase()
+            .replace(/[^\p{L}\p{N}\s-]/gu, "")
+            .replace(/\s/g, "-");
+        });
       } else {
         const pre = document.createElement("pre");
         pre.textContent = md;

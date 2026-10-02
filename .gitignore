@@ -15,3 +15,5 @@ __pycache__/
 # pdf-Dateien
 Script-README.pdf
 display/Display-README.pdf
+# Playwright-MCP-Screenshots/Snapshots aus UI-Tests
+.playwright-mcp/

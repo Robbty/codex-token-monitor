@@ -263,6 +263,13 @@ Eigenschaften:
 - Ausgabe enthält zusätzlich das Feld `session_active=true|false`
 - Funktioniert sowohl mit als auch ohne `--max-age` (oft kann man `--max-age`
   weglassen, wenn `--require-open` aktiv ist)
+- Ein einziger `/proc`-Durchlauf pro Suche, egal wie viele Rollouts unter
+  `~/.codex/sessions` liegen (bei einigen hundert Dateien Millisekunden statt
+  Sekunden)
+- Ab Codex 0.160 schreibt meist ein gemeinsamer Hintergrund-Server
+  (`codex app-server --managed-daemon`) die Rollouts, nicht das Terminal-
+  Programm selbst. Die Session gilt so lange als laufend, wie er sie geladen
+  hat — nach `/exit` noch etwa 15–30 Sekunden
 
 ### Filtern in Bash
 
@@ -361,6 +368,9 @@ das wieder lösen:
 session_id=019e218d-…
 session_cwd=/pfad/zu/deinem-projekt
 session_active=true
+started_at=2026-10-02T06:25:19.977Z   # Start der Session (session_meta.timestamp)
+model=gpt-6-astra              # Modell des letzten Turns (turn_context.model)
+effort=high                    # Reasoning-Effort des letzten Turns (fehlt bei Modellen ohne Reasoning)
 compact_count=2                # Wie oft der Kontext bereits zusammengefasst wurde (auto/manuell)
 context_window=258400
 percent_left=79
@@ -612,8 +622,11 @@ Architektur und FAQ stehen in
 Unter `display/` liegt ein kleines Statusfenster, das die laufenden
 Codex-Sessions eines Projektverzeichnisses in Echtzeit anzeigt — pro
 Session eine eigene Zeile mit horizontalem Auslastungs-Balken (Verlauf
-grün→gelb→rot), freier Token-Zahl, Idle-Timer und vier Action-Buttons.
-Geschlossene Sessions verschwinden automatisch.
+grün→gelb→rot), freier Token-Zahl, Modell/Effort, Arbeitsfläche, Idle-Timer
+und Action-Buttons. Geschlossene Sessions verschwinden automatisch.
+Dazu kommen ein Fenster **🕘 Letzte Chats** (alle Projekte, mit Favoriten,
+eigenen Namen, Verlauf, `codex resume`-Befehl und Löschen) und Karten für
+**Geister-TUIs** (Codex-Terminals ohne Session).
 
 Über der Sessions-Liste liegt optional ein **Plan-Widget**, das die
 oben beschriebenen kontoseitigen Rate-Limits als kompakte Balken-Zeilen
@@ -636,8 +649,12 @@ auf demselben Server, der `codex-tokens plan` spawnt und das Ergebnis
 - `codex-tokens` installiert (siehe oben)
 - für die Action-Buttons:
   - `xdg-open` (in jedem Linux-Desktop dabei) — für „📁 Verzeichnis öffnen"
-  - `wmctrl` (`sudo apt install wmctrl`) — für „⚡ Terminal fokussieren"
-  - `xclip` oder `wl-clipboard` — für „↻ Rollover-Prompt kopieren" und Session-ID-Klick
+  - `wmctrl` (`sudo apt install wmctrl`) — für „⚡ Terminal fokussieren",
+    die Arbeitsflächen-Anzeige und „Fenster auf allen Arbeitsflächen"
+  - `xclip` oder `wl-clipboard` — für „↻ Handover" und Session-ID-Klick
+  - `xdotool` (`sudo apt install xdotool`) — nur damit ↻ den Handover-Prompt
+    direkt in die Session einfügen kann (ohne: Prompt wird nur kopiert)
+  - `codex` selbst — für 🗑 in „Letzte Chats" (`codex delete`)
 
 ### Starten
 
@@ -654,7 +671,7 @@ cd /pfad/zu/codex-token-monitor
 ./display/launcher.sh /pfad/zu/deinem-projekt
 ```
 
-Es öffnet sich ein schmales Fenster (~520×640 px), das alle aktiven
+Es öffnet sich ein schmales Fenster (~680×640 px), das alle aktiven
 Codex-Sessions auflistet. Im system-weiten Modus zeigt jede Karte den
 zugehörigen `cwd` an, sodass du Sessions verschiedener Projekte
 unterscheiden kannst. Schließe das Fenster oder drücke `Strg+C` im
@@ -670,30 +687,39 @@ Optional ein anderer Port:
 ### UI im Überblick
 
 ```text
-┌──────────────────────────────────────────────────────────────────┐
-│ ▮▮▮▮▮▮▮▮░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  198 k frei    │ ← horizontaler Bar
-│ codex-token-monitor/tmp                 ● ⌚ 0:42                │   (grün→gelb→rot)
-│ 019e315c-c8be · 30 k / 258 k · Σ 67 k    [📁] [⚡] [↻]           │
-└──────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│ ▮▮▮▮▮▮▮▮░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  198 k / 78% frei │ ← horizontaler Bar
+│ Allgemeines · ~/projekte/xy  (GPT-6 Astra · high)  ● ⌚ 0:42       │   (grün→gelb→rot)
+│ 019e315c-c8be · 30 k / 258 k · Σ 67 k     [📁] [⚡] [📋] [↻] [🛑]   │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Balken oben**: Füllung zeigt verbrauchten Kontext, Farbe fließend
   grün → gelb → rot. Hover-Tooltip zeigt vollständige Token-Werte.
-- **Statuspunkt grün/grau**: Codex-Prozess aktiv vs. beendet (per
+- **Arbeitsfläche · Pfad**: Name der Arbeitsfläche, auf der das Terminal der
+  Session liegt (per `wmctrl`), und der `~`-abgekürzte Projektpfad.
+- **Modell · Effort**: z. B. „GPT-6 Astra · high" aus dem letzten Turn.
+- **Statuspunkt grün/grau**: Codex-Session aktiv vs. beendet (per
   `/proc`-Check). Beendete Sessions werden ausgeblendet.
-- **⌚ Idle-Timer**: Sekunden/Minuten seit dem letzten TokenCount-Event.
+- **⌚ Idle-Timer**: Zeit seit dem letzten Schreiben der Rollout-Datei; nach
+  10 Minuten gelb mit „· wartet".
 - **Session-ID (gekürzt)**: Klick kopiert die vollständige UUID.
 - **📁** öffnet das `session_cwd` im Dateimanager (`xdg-open`).
-- **⚡** holt das passende Terminal-/IDE-Fenster nach vorne (per `wmctrl -lx`,
-  bevorzugt IDE-Klassen wie VS Code / Cursor / JetBrains, schließt
-  Dateimanager-Klassen explizit aus).
+- **⚡** holt das Terminal der Session nach vorne und wechselt auf seine
+  Arbeitsfläche (per `wmctrl`; exakt über die Fenster-ID des Terminals, sonst
+  über den Fenstertitel — Codex titelt sein Terminal „‹Chat-Name› | ‹Projekt›").
 - **📋** kopiert den absoluten Pfad zur Rollout-Datei
   (`~/.codex/sessions/.../rollout-*.jsonl`) in die Zwischenablage.
-- **↻** kopiert einen Handover-Prompt in die Zwischenablage, den du in
-  Codex einfügen kannst, um einen sauberen Session-Rollover auszulösen.
+- **↻** fügt einen Handover-Prompt direkt in die Session ein und schickt ihn
+  ab; sobald `HANDOVER.md` geschrieben ist, fragt die Karte „Chat schließen?"
+  („Ja" schickt `/exit`). Ist das Terminal nicht sicher erkennbar, wird der
+  Prompt nur in die Zwischenablage kopiert.
+- **🛑** beendet die Codex-TUI der Session nach einer Rückfrage (`SIGTERM`).
 
-In der Kopfzeile öffnet **📖** ein Modal mit dieser Bedienungsanleitung —
-gerendert direkt aus `display/README.md` mit `marked.js`.
+In der Kopfzeile wählt ein Dropdown die Sortierung (Auslastung / Ort /
+Startzeit), **🕘** öffnet „Letzte Chats", **📖** diese Bedienungsanleitung in
+eigenem Fenster — gerendert direkt aus `display/README.md` mit `marked.js`.
+Alle Einzelheiten stehen in [`display/README.md`](display/README.md).
 
 ### Anpassung
 

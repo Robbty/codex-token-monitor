@@ -2,7 +2,8 @@
 
 Diese Anleitung beschreibt das **Statusfenster**, das du gerade vor dir
 hast: pro laufender Codex-Session eine Karte mit Auslastungs-Balken,
-Token-Werten, Idle-Timer und vier Action-Buttons.
+Token-Werten, Modell, Arbeitsfläche, Idle-Timer und Action-Buttons — dazu
+das Fenster **🕘 Letzte Chats** und Karten für **Geister-TUIs**.
 
 Für die **CLI-Bedienung von `codex-tokens`** (Pipelines, tmux, Skripte,
 Cronjobs) sowie für Build- und Installations-Anleitungen → siehe die
@@ -26,6 +27,11 @@ oben in dieser Toolbar erreichbar; sie öffnet in einem zweiten Fenster).
 
 Beenden: Fenster schließen oder im Launcher-Terminal `Strg+C`.
 
+Der Launcher findet `codex-tokens` automatisch im `$PATH` oder unter
+`../target/release/`. Über `CODEX_TOKENS_BIN=/pfad/zu/codex-tokens` lässt sich
+ein konkretes Binary erzwingen, über `CODEX_BIN=/pfad/zu/codex` das
+`codex`-Programm, das 🗑 in „Letzte Chats" benutzt.
+
 ### Desktop-Icon (zum Anklicken)
 
 Ein Skript legt einen Menü-Eintrag und ein anklickbares Desktop-Symbol an:
@@ -38,8 +44,11 @@ Ein Skript legt einen Menü-Eintrag und ein anklickbares Desktop-Symbol an:
 
 Es erzeugt `codex-token-monitor.desktop` in `~/.local/share/applications/`
 (Anwendungsmenü) und auf dem Desktop, mit dem mitgelieferten `icon.png`.
-Pfade werden dynamisch ermittelt — bei verschobenem Repo das Skript
-einfach erneut ausführen.
+Pfade werden dynamisch ermittelt und `codex-tokens` sowie `codex` fest in die
+`Exec`-Zeile geschrieben (`CODEX_TOKENS_BIN`, `CODEX_BIN`), damit der Start
+auch aus einer minimalen Desktop-Session-`PATH` klappt (etwa wenn Codex über
+nvm installiert ist) — bei verschobenem Repo oder neu installiertem Codex das
+Skript einfach erneut ausführen.
 
 Beim ersten Doppelklick verlangen XFCE/GNOME ggf. eine Bestätigung
 (Rechtsklick → „Diese Datei ausführbar machen" / „Allow Launching").
@@ -50,12 +59,29 @@ Fällen erübrigt.
 ## Die Karte im Detail
 
 ```text
-╭──────────────────────────────────────────────────────────╮
-│ ▮▮▮▮░░░░░░░░░░░░░░░░░░░░  198 k / 78% frei              │  ← Balken oben
-│ codex-token-monitor/tmp         ● ⌚ 0:42                │  ← cwd · Status · Idle
-│ 019e315c-c8be · 30k / 258k · Σ 67k  [📁] [⚡] [📋] [↻]  │  ← ID · Verbrauch · Buttons
-╰──────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────╮
+│ ▮▮▮▮░░░░░░░░░░░░░░░░░░░░  198 k / 78% frei                       │  ← Balken oben
+│ Allgemeines · ~/projekte/xy  (GPT-6 Astra · high)  ● ⌚ 0:42      │  ← Arbeitsfläche · cwd · Modell · Status · Idle
+│ 019e315c-c8be · 30k / 258k · Σ 67k   [📁] [⚡] [📋] [↻] [🛑]      │  ← ID · Verbrauch · Buttons
+╰───────────────────────────────────────────────────────────────────╯
 ```
+
+### Arbeitsfläche · Pfad
+
+Der Projektpfad wird mit `~` abgekürzt (Tooltip zeigt den vollen Pfad). Davor
+steht — gedimmt — der **Name der Arbeitsfläche**, auf der das Terminal der
+Session liegt. Ermittelt wird das Fenster wie beim ⚡-Knopf (siehe
+[Wie der Monitor Sessions ihrem Terminal zuordnet](#wie-der-monitor-sessions-ihrem-terminal-zuordnet))
+und die Arbeitsfläche über `wmctrl -d`. Kein Präfix erscheint, wenn `wmctrl`
+fehlt oder kein Fenster zuzuordnen ist (z. B. Codex im IDE-Terminal).
+
+### Modell · Effort
+
+Rechts neben dem Pfad steht ein kleines Badge mit dem **Modell** des letzten
+Turns (z. B. „GPT-6 Astra" für `gpt-6-astra`) und dem **Reasoning-Effort**
+(`low`/`medium`/`high`/`xhigh`). Der Tooltip nennt die vollständige Modell-ID.
+Wechselst du in Codex mit `/model` das Modell, zieht das Badge beim nächsten
+Turn nach. Sessions, die noch keinen Turn hatten, zeigen kein Badge.
 
 ### Balken (oben)
 
@@ -68,14 +94,29 @@ Fällen erübrigt.
 
 ### Statuspunkt (●)
 
-- **Grün** — Codex-Prozess läuft, Datei wird aktiv geschrieben.
+- **Grün** — die Rollout-Datei der Session ist zum Schreiben geöffnet, die
+  Session läuft.
 - **Grau** — Codex-Session beendet, letzter Stand eingefroren (Karte
   verschwindet innerhalb von 3 Sekunden).
 - **Gelb** — Status unbekannt (kein Linux/WSL2, oder `/proc` nicht lesbar).
 
-### Idle-Timer (⌚)
+Ab Codex 0.160 schreibt meist ein gemeinsamer **Hintergrund-Server**
+(`codex app-server --managed-daemon`) die Session-Dateien, nicht das
+Codex-Programm im Terminal. Nach `/exit` hält er die Session noch etwa
+15–30 Sekunden geladen — so lange bleibt die Karte grün, dann verschwindet
+sie. (Codex meldet beim Beenden selbst: „Disconnected from this task. Any
+running work continues." — ein noch laufender Turn arbeitet im Hintergrund
+weiter.)
 
-Sekunden, Minuten oder Stunden seit der letzten Aktivität in dieser Session.
+### Idle-Timer (⌚) und „wartet"-Markierung
+
+Zeigt, wie lange die Rollout-Datei **nicht mehr beschrieben** wurde (echte
+Datei-Änderungszeit, alle 3 s aktualisiert — nicht der Zeitpunkt, zu dem das
+Fenster die Daten bekam). Liegt das länger als **10 Minuten** zurück, wird der
+⌚-Timer **gelb** und um „· wartet" ergänzt: Die Session lebt, wartet aber auf
+deine Eingabe. Der Balken selbst bleibt hell. Das Fenster ist großzügig, weil
+ein arbeitender Agent (langer Tool-Lauf, lange Generierung) durchaus Minuten
+zwischen Schreibvorgängen brauchen kann.
 
 ### Session-ID (klickbar)
 
@@ -86,11 +127,53 @@ Zwischenablage — praktisch für `codex-tokens --thread <UUID>`.
 
 | Button | Aktion |
 |---|---|
-| **📁** | Öffnet `session_cwd` im Dateimanager (`xdg-open`) |
-| **⚡** | Holt das passende IDE-/Terminal-Fenster nach vorne (`wmctrl`) — bevorzugt VS Code, Cursor, JetBrains usw.; ignoriert Dateimanager |
+| **📁** | Öffnet `session_cwd` im Dateimanager — auf der Arbeitsfläche des Projekts: Ein bereits offenes Dateimanager-Fenster mit dem Ordner wird nach vorne geholt (inkl. Arbeitsflächen-Wechsel); sonst wird erst auf die Arbeitsfläche des Session-Terminals gewechselt und dort geöffnet (`wmctrl` + `xdg-open`; ohne `wmctrl` einfach `xdg-open`) |
+| **⚡** | Holt das Terminal der Session nach vorne und wechselt dabei auf dessen Arbeitsfläche (`wmctrl`). Welches Fenster das ist, steht unter [Wie der Monitor Sessions ihrem Terminal zuordnet](#wie-der-monitor-sessions-ihrem-terminal-zuordnet). Nur Terminal- und IDE-Fenster kommen infrage, Dateimanager und Browser nie |
 | **📋** | Kopiert den absoluten Pfad zur Rollout-Datei (`~/.codex/sessions/…/rollout-*.jsonl`) in die Zwischenablage |
-| **↻** | Kopiert einen Handover-Prompt in die Zwischenablage — in Codex einfügen für einen sauberen Session-Rollover |
-| **🛑** | **Beendet** die Codex-Session — Bestätigungs-Dialog erscheint, dann SIGTERM an den TUI-Prozess. Effekt entspricht dem Schließen des Terminal-Fensters: das Rollout wird sauber abgeschlossen, mit `codex resume` jederzeit fortsetzbar. Default-Fokus auf „Abbrechen" — versehentliches Enter ist harmlos. |
+| **↻** | Erzeugt das Handover **direkt in der Session**: Der Prompt wird ins Terminal der Session eingefügt und abgeschickt (`xdotool`). Ein bestehendes `HANDOVER.md` wird dabei nur aktualisiert. Die Karte zeigt danach „⏳ Handover läuft" und fragt, sobald `HANDOVER.md` geschrieben und die Session wieder ruhig ist: „Chat schließen? Ja/✕" — „Ja" schickt `/exit` an dasselbe Terminal. Ohne `xdotool`, bei beendeter Session oder wenn das Terminal nicht **sicher** erkannt ist, wird der Prompt wie früher **nur kopiert** (der Hinweis unten im Fenster nennt den Grund) — dann in Codex mit `Strg+Shift+V` einfügen und abschicken |
+| **🛑** | **Beendet** das Codex-Programm der Session — Bestätigungs-Dialog erscheint, dann SIGTERM an den TUI-Prozess. Effekt entspricht dem Schließen des Terminal-Fensters; mit `codex resume` jederzeit fortsetzbar. Default-Fokus auf „Abbrechen" — versehentliches Enter ist harmlos. Nur bei sicher erkanntem Terminal möglich |
+
+Sicherheitsnetz beim ↻-Einfügen: Unmittelbar vor dem Einfüge-Tastendruck prüft
+der Monitor, ob die Zwischenablage noch den Handover-Prompt enthält (kopierst
+du genau in dieser Sekunde etwas anderes, würde sonst dein Text eingefügt).
+Nach dem Abschicken vergleicht er den Text, der in der Session ankam, mit dem
+Prompt — weicht er ab, erscheint die Warnung „Achtung: In der Session kam ein
+anderer Text an — bitte das Terminal prüfen!".
+
+## Wie der Monitor Sessions ihrem Terminal zuordnet
+
+Für ⚡, 📁, die Arbeitsflächen-Anzeige, ↻ und 🛑 muss der Monitor wissen, in
+welchem Terminal eine Session läuft. Ab Codex 0.160 hält das Codex-Programm
+im Terminal dafür nichts Eindeutiges mehr offen (die Session-Datei schreibt
+der Hintergrund-Server). Der Monitor prüft deshalb der Reihe nach:
+
+1. **Das Codex-Programm schreibt die Datei selbst** (Codex ohne
+   Hintergrund-Server) — eindeutig.
+2. **Der Chat-Name steht im Fenstertitel.** Codex titelt sein Terminal
+   „‹Chat-Name› | ‹Projekt›"; den Chat-Namen kennt der Monitor aus
+   `~/.codex/session_index.jsonl`. Zählt nur, wenn genau ein Terminal passt
+   und keine zweite laufende Session denselben Namen trägt.
+3. **Das Terminal wurde mit `codex resume <Session-ID>` gestartet.**
+4. **Notbehelf:** das älteste Codex-Terminal im Projektverzeichnis.
+
+Das passende Fenster findet er dann exakt über die Fenster-ID, die das
+Terminal an Codex vererbt (`WINDOWID`). ⚡, 📁 und die Arbeitsflächen-Anzeige
+nutzen jede Stufe; **↻ (Einfügen), „Ja" (`/exit`) und 🛑 handeln nur bei den
+Stufen 1–3** — in einen nur vermuteten Terminal zu tippen oder ein vermutetes
+Programm zu beenden wäre schlimmer als der Rückfall aufs Kopieren.
+
+Typische Fälle, in denen ↻ nur kopiert:
+
+- Die Session ist ganz frisch und hat noch keinen Chat-Namen.
+- Du hast den Fenstertitel in Codex mit `/title` so eingestellt, dass der
+  Chat-Name nicht mehr darin vorkommt. Abhilfe: in Codex `/title` aufrufen und
+  das Element mit dem Chat-Namen wieder einschalten (Beschriftung im Menü
+  unsicher — es heißt dort vermutlich „thread" oder „session name").
+- Codex läuft im Terminal einer IDE (VS Code u. a.), das keine `WINDOWID`
+  setzt.
+- Im selben Terminal-Fenster laufen mehrere Codex-Sessions in Reitern und der
+  Reiter der Session ist gerade nicht vorne (der Fenstertitel zeigt den
+  aktiven Reiter). Abhilfe: den Reiter der Session anklicken, dann ↻.
 
 ## Bedeutung der Zahlen
 
@@ -101,9 +184,29 @@ Zwischenablage — praktisch für `codex-tokens --thread <UUID>`.
 | **Σ 67 k** | Kumulierter Token-Verbrauch über die gesamte Session, inklusive aller Compact-Vorgänge |
 | **↻ 2×** | (Badge, nur sichtbar wenn > 0) Wie oft Codex den Kontext bereits zusammengefasst hat — entweder automatisch (Limit erreicht) oder über `/compact` in der TUI. Die Σ-Summe enthält auch die Token, die für diese Compaction-Turns verbraucht wurden. |
 
-Als Faustregel bei ~80 % Verbrauch (= 20 % frei) den ↻-Button drücken,
-Handover in Codex einfügen, neue Session starten. Wenn Codex stattdessen
-selbst auto-compact, wandert der ↻-Zähler eins hoch.
+Als Faustregel bei ~80 % Verbrauch (= 20 % frei) den ↻-Button drücken — das
+Handover entsteht direkt in der Session; nach der Schließen-Nachfrage eine
+neue Session starten. Wenn Codex stattdessen selbst auto-compact, wandert der
+↻-Zähler eins hoch.
+
+## Lade- und Frische-Zustände
+
+Beim Start (oder nach einem Reconnect) braucht es einen Moment, bis frische
+Daten vom Server da sind. Damit kein irreführendes „Keine Sessions" erscheint,
+unterscheidet das Display:
+
+- **Verbinde / Lädt** — solange die Verbindung noch nicht steht bzw. kurz
+  danach, erscheint ein pulsierender Platzhalter („Verbinde mit dem Server …"
+  / „Suche aktive Codex-Sessions …").
+- **Live** — frische Daten sind da.
+- **Wartet** — Daten älter als 10 min: gelber ⌚-Timer mit „· wartet".
+
+Auch das **Plan-Widget** zeigt beim ersten Laden „Plan-Daten werden geladen …"
+und überbrückt vorübergehende Fehler mit ein paar stillen Wiederholungen,
+bevor es überhaupt einen Fehler anzeigt.
+
+Die Schwellen stehen oben in `display/static/app.js`: `STALE_AFTER_MS`
+(Default 600 000 = 10 min) und `SETTLE_MS` (1 800 ms).
 
 ## Worker-Schalter
 
@@ -143,17 +246,89 @@ schmale, gelb umrandete **„Geister-TUI"-Karte** ganz oben:
 [ Geister-TUI ]  /home/peter/work/xy  pid 1756458  ⌚ 30 min  📁 ⚡ 🛑
 ```
 
-- Erkennung läuft alle 5 Sekunden über `/proc` — Codex-Native-Binaries ohne
-  Schreib-Handle auf eine `rollout-*.jsonl` werden gesammelt.
+- Erkennung läuft alle 3 Sekunden über `/proc`: Jedes interaktive
+  Codex-Programm, dem keine laufende Session zugeordnet werden kann (siehe
+  [Wie der Monitor Sessions ihrem Terminal zuordnet](#wie-der-monitor-sessions-ihrem-terminal-zuordnet)),
+  ist ein Geist. `codex app-server` (der Hintergrund-Server, auch der der
+  VS-Code-Erweiterung), `codex exec` und andere Unterbefehle ohne Chat zählen
+  nie als Geist und lassen sich auch nicht per 🛑 beenden.
 - Buttons: 📁 öffnet das Arbeitsverzeichnis, ⚡ holt das Terminal nach
   vorne (gleiche Heuristik wie bei den Session-Karten), 🛑 beendet die TUI
   per SIGTERM nach Bestätigungs-Dialog.
 - Sobald du in der TUI etwas eingibst und Enter drückst, schreibt Codex
   ein Rollout an, die Geister-Karte verschwindet, und eine normale
-  Session-Karte erscheint stattdessen.
+  Session-Karte erscheint stattdessen (das kann bis zu etwa 8 Sekunden
+  dauern).
 
 Das ist besonders praktisch, wenn ein versehentlich gestartetes Codex im
 Hintergrund Resources frisst, ohne dass du noch weißt, wo es lief.
+
+## 🕘 Letzte Chats
+
+Der **🕘-Button** in der Kopfzeile öffnet ein eigenes Fenster mit einer Tabelle
+der zuletzt aktiven Codex-Chats — über **alle** Projektverzeichnisse hinweg,
+nicht nur die gerade laufenden.
+
+**Spalten:**
+
+- **★** — Favorit. Ein Klick auf ☆ heftet den Chat an: Favoriten stehen
+  **immer zuoberst** und fallen **nie aus den Limits** heraus — auch ein
+  Wochen alter Chat bleibt gelistet, solange der Stern gesetzt ist. Erneuter
+  Klick auf ★ löst ihn wieder. Beim Löschen eines Chats verschwindet sein
+  Stern mit.
+- **Verzeichnis** — der Projektordner (Tooltip: voller Pfad). Ein grüner
+  Punkt ● markiert Chats, deren Session gerade läuft.
+- **Wann** — letzte Aktivität als relative Zeit („vor 5 min", „gestern", …);
+  Tooltip zeigt den exakten Zeitpunkt.
+- **Thema** — der Chat-Name, den Codex selbst vergibt (derselbe wie im
+  Fenstertitel und in `codex resume`). Fehlt er (ältere Chats), steht dort
+  kursiv die erste eigene Nachricht. Über den **✎-Knopf** (erscheint beim
+  Überfahren der Zeile) gibst du dem Chat einen **eigenen Namen**: Er ersetzt
+  den automatischen Titel (gepunktet unterstrichen), der automatische Titel
+  bleibt als Tooltip sichtbar. Enter speichert, Esc bricht ab; ein leeres
+  Feld stellt den automatischen Titel wieder her. Der eigene Name gilt nur im
+  Monitor, Codex selbst bekommt ihn nicht.
+- **🗑** — löscht den Chat nach einer Rückfrage direkt in der Zeile
+  („Löschen? Ja/✕"). Der Monitor ruft dafür Codex' eigenes
+  `codex delete --force <Session-ID>` auf, das die Rollout-Datei **und**
+  Codex' Index-Eintrag entfernt (der Chat taucht danach auch in
+  `codex resume` nicht mehr auf). Nur wenn kein `codex` gefunden wird, löscht
+  der Monitor die Rollout-Datei direkt. Das ist endgültig. Laufende Sessions
+  (●) sind geschützt: Der Knopf ist deaktiviert, und auch der Server lehnt ab.
+
+Ein Klick auf die Spaltenköpfe **Verzeichnis** oder **Wann** sortiert danach
+(▲/▼ zeigt die Richtung; erneuter Klick dreht sie um). Default ist
+„Verzeichnis"; innerhalb eines Verzeichnisses stehen die neuesten Chats oben.
+
+Der Schalter **„Aktive zuerst"** gibt laufenden Chats (●) Vorrang: Bei
+Sortierung nach „Wann" stehen sie als Block oben, bei „Verzeichnis" rücken
+ganze Verzeichnisse mit einem laufenden Chat nach oben.
+
+Der Schalter **„Nur ★"** blendet alles außer den Favoriten aus.
+
+**Klick auf eine Zeile** klappt einen kondensierten Gesprächsverlauf auf (die
+letzten Nachrichten von dir und Codex, gekürzt), dazu:
+
+- **📁 Verzeichnis öffnen** — wie 📁 auf den Karten.
+- **📋 codex resume kopieren** — kopiert
+  `cd <Projektordner> && codex resume <Session-ID>`. In einem Terminal
+  einfügen (`Strg+Shift+V`) und Enter drücken — der Chat geht dort weiter,
+  wo er aufgehört hat.
+
+**Limits** — direkt im Fenster einstellbar:
+
+- **Pro Verzeichnis** (Default 3): wie viele der neuesten Chats je Projekt
+  berücksichtigt werden — so dominiert kein einzelnes Projekt die Liste.
+- **Gesamt** (Default 10): wie viele Chats insgesamt angezeigt werden.
+
+Favoriten zählen nicht gegen diese Plätze. Chats, in denen nie eine Nachricht
+abgeschickt wurde, werden übersprungen. Alle Einstellungen dieses Fensters
+(Limits, Schalter, Favoriten, eigene Namen) stehen im Abschnitt `chats` der
+Konfigurationsdatei `~/.config/codex-token-monitor/config.json`.
+
+Das Fenster liest nur die Dateien unter `~/.codex/sessions/…` und
+`~/.codex/session_index.jsonl`, die Codex ohnehin schreibt — verändert wird
+nichts, außer beim ausdrücklich bestätigten 🗑-Löschen.
 
 ## Plan-Anzeige (kontoseitige Rate-Limits)
 
@@ -230,9 +405,24 @@ rm ~/.config/codex-token-monitor/config.json
       "code_review": false,
       "credits":     false
     }
-  }
+  },
+  "chats": {
+    "per_dir": 3,
+    "total": 10,
+    "active_first": false,
+    "favorites": [],
+    "only_favorites": false,
+    "names": {}
+  },
+  "windows": { "sticky": true },
+  "display": { "sort": "usage" }
 }
 ```
+
+Die Abschnitte `chats` (🕘 Letzte Chats), `windows` (Fenster auf allen
+Arbeitsflächen) und `display` (Karten-Sortierung) setzt das Display selbst,
+wenn du die Einstellungen im Fenster änderst; fehlen sie, gelten die oben
+gezeigten Standardwerte.
 
 Liegt in `~/.config/codex-token-monitor/config.json` (oder
 `$XDG_CONFIG_HOME/codex-token-monitor/config.json`, falls gesetzt).
@@ -348,7 +538,7 @@ laufendem Codex bringen.
 
 | Status-Code (Backend → UI) | Anzeige | Bedeutung |
 |---|---|---|
-| (keiner, Erstaufruf) | Plan-Daten werden geladen … | Erste Abfrage läuft (max. 10 s Timeout) |
+| (keiner, Erstaufruf) | Plan-Daten werden geladen … | Erste Abfrage läuft (max. 10 s Timeout, mit stillen Wiederholungen) |
 | `disabled` | (Widget bleibt versteckt) | Opt-in ist aus |
 | `auth_missing` | Nicht eingeloggt — Codex starten und einloggen. | `~/.codex/auth.json` fehlt oder enthält kein `tokens.access_token` |
 | `token_expired` | Token abgelaufen — Codex starten, damit der Token refresht wird. | HTTP 401/403 vom Backend (siehe „Token-Refresh") |
@@ -418,15 +608,20 @@ In der Kopfzeile steht entweder
 
 ### Sortierung der Karten
 
-Von oben nach unten:
+Das Dropdown in der Kopfzeile bestimmt die Reihenfolge der Session-Karten
+(gespeichert als `display.sort` in der Konfigurationsdatei):
 
-1. **Echte Sessions** vor Worker-Sessions
-2. Innerhalb der echten Sessions: zuerst nach **`compact_count` absteigend**
-   (jede Kontext-Komprimierung kostet einen kompletten Turn → höchster
-   bisheriger „Aufwand" steht oben)
-3. Bei gleichem `compact_count`: nach **`percent_used` absteigend** (der
-   gerade vollste Balken oben)
-4. Worker am Ende, sortiert nach kumuliertem Verbrauch absteigend
+- **Auslastung** (Default) — am häufigsten komprimierte Session zuerst
+  (`compact_count`; jede Komprimierung kostet einen ganzen Turn), bei
+  Gleichstand der vollere Balken (`percent_used`). So springt eine gerade
+  beobachtete Session nach einem Auto-Compact nicht unerwartet weit nach
+  unten.
+- **Ort** — alphabetisch nach Projektpfad.
+- **Startzeit** — nach Beginn der Session, die älteste zuerst (stabile
+  Reihenfolge: Karten springen beim Arbeiten nicht umher).
+
+Echte Sessions stehen immer vor Worker-Sessions (nach kumuliertem Verbrauch
+sortiert); Geister-TUIs stehen ganz oben.
 
 ## Anpassung
 
@@ -438,6 +633,15 @@ Von oben nach unten:
   nächsten 📖-Klick neu gerendert.
 - **Mehrere Projekte gleichzeitig**: einfach mehrere `launcher.sh`-
   Instanzen mit verschiedenen `--port`-Werten starten.
+- **Frische-Schwellen**: `STALE_AFTER_MS` und `SETTLE_MS` oben in
+  `display/static/app.js`.
+- **Fenster auf allen Arbeitsflächen**: Das Monitor-Fenster und seine
+  Unterfenster (📖 Doku, 🕘 Letzte Chats) werden beim Öffnen per `wmctrl` auf
+  allen Arbeitsflächen sichtbar gemacht („sticky"). Abschalten: in
+  `~/.config/codex-token-monitor/config.json` auf oberster Ebene
+  `"windows": {"sticky": false}` eintragen (die Datei ist JSON — auf das Komma
+  zum vorigen Eintrag achten), dann das Monitor-Fenster schließen und neu
+  starten. Ohne `wmctrl` passiert ohnehin nichts.
 
 ## Voraussetzungen
 
@@ -448,6 +652,9 @@ Von oben nach unten:
   - `xdg-open` (in jedem Linux-Desktop dabei)
   - `wmctrl` (`sudo apt install wmctrl`)
   - `xclip` oder `wl-clipboard` (`sudo apt install xclip`)
+  - `xdotool` (`sudo apt install xdotool`) — nur für das direkte
+    Handover-Einfügen per ↻ und „Ja" (ohne fällt ↻ aufs Kopieren zurück)
+  - `codex` — für 🗑 in „Letzte Chats" (`codex delete`)
 
 ## Hilfe und Bugs
 

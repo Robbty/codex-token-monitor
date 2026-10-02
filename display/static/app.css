@@ -169,6 +169,26 @@ html, body {
   flex: 1;
 }
 
+/* Arbeitsflächen-Name als gedimmter Präfix vor dem Pfad */
+.meta__line--top .cwd .workspace {
+  color: var(--fg-dim);
+}
+
+.modelinfo {
+  flex-shrink: 0;
+  color: var(--fg-dim);
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.modelinfo .effort {
+  color: var(--fg-mute);
+}
+.modelinfo.hidden { display: none; }
+
 .status {
   font-size: 14px;
   line-height: 1;
@@ -190,6 +210,22 @@ html, body {
   font-size: 11.5px;
   font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
+
+/* Handover-Statuszeile auf der Karte: ⏳ Wartezustand nach dem Auslösen,
+   danach die Inline-Nachfrage „Chat schließen? Ja/✕" (Machart wie die
+   🗑-Bestätigung im Chats-Fenster). .hidden greift, weil .handover selbst
+   kein display setzt, das später in der Datei gewinnen könnte. */
+.handover { color: var(--fg-dim); font-size: 11.5px; }
+.handover.hidden { display: none; }
+.handover.error { color: var(--red); }
+.handover button {
+  font-size: 11.5px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-elev); color: var(--fg-dim); margin-left: 5px;
+  padding: 2px 8px; cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.handover button.yes:hover { color: #fff; background: var(--red); border-color: var(--red); }
+.handover button:not(.yes):hover { color: var(--fg); border-color: var(--accent); background: var(--bg-hover); }
 
 .sid {
   cursor: pointer;
@@ -332,6 +368,20 @@ html, body {
 }
 .toast--visible { opacity: 1; }
 
+/* --- card-sort select ---------------------------------------------------- */
+
+.sort-select {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.sort-select:hover { color: var(--fg); border-color: var(--accent); }
+
 /* --- toggle switch (worker visibility) ---------------------------------- */
 
 .toggle {
@@ -381,6 +431,26 @@ html, body {
 .session--worker .cwd {
   text-decoration: underline dashed var(--fg-mute);
   text-underline-offset: 3px;
+}
+
+/* --- stale session (data not refreshed recently) ----------------------- */
+/* The bar reflects the last write to the rollout file. When that is older
+   than the freshness threshold, the session is parked waiting for input.
+   We keep the bar at full brightness — dimming it read like a rendering
+   glitch — and flag staleness only on the age timer instead. */
+.session--stale .idle { color: var(--yellow); font-weight: 600; }
+
+/* --- loading / connecting placeholder ---------------------------------- */
+.loading-pulse { animation: loading-pulse 1.3s ease-in-out infinite; }
+@keyframes loading-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+/* Plan widget loading line: neutral (not the yellow error colour). */
+.plan__loading {
+  color: var(--fg-dim);
+  font-size: 11px;
 }
 
 /* --- help button -------------------------------------------------------- */

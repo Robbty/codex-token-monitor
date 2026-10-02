@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Codex Token Monitor — Letzte Chats</title>
+  <link rel="icon" type="image/png" href="/icon.png" />
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    body { background: var(--bg); padding: 0; overflow-y: auto; }
+    .chatswrap { max-width: 860px; margin: 0 auto; padding: 22px 28px 40px; }
+    .chatstools {
+      margin-bottom: 18px; padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+    }
+    .chatstools h1 { font-size: 16px; margin: 0; color: var(--fg); flex: 1; }
+    .chatstools button {
+      background: var(--bg-elev); border: 1px solid var(--border);
+      color: var(--fg-dim); border-radius: 4px; padding: 5px 11px;
+      font-size: 12px; cursor: pointer;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
+    }
+    .chatstools button:hover {
+      background: var(--bg-hover); color: var(--fg); border-color: var(--accent);
+    }
+    .limit { display: flex; gap: 5px; align-items: center;
+             font-size: 12px; color: var(--fg-dim); }
+    .limit input {
+      width: 52px; background: var(--bg-elev); border: 1px solid var(--border);
+      color: var(--fg); border-radius: 4px; padding: 4px 6px; font-size: 12px;
+    }
+    table.chats { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .chats th {
+      text-align: left; color: var(--fg-mute); font-weight: 500; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      padding: 6px 10px; border-bottom: 1px solid var(--border);
+    }
+    .chats th.sortable { cursor: pointer; user-select: none; }
+    .chats th.sortable:hover { color: var(--fg); }
+    .chats th.sortable .arrow { margin-left: 4px; color: var(--accent); }
+    .chats td {
+      padding: 8px 10px; border-bottom: 1px solid var(--border);
+      color: var(--fg); vertical-align: top;
+    }
+    .chats tr.row { cursor: pointer; }
+    .chats tr.row:hover td { background: var(--bg-hover); }
+    .chats tr.row.expanded td { background: var(--bg-elev); }
+    td.dir { white-space: nowrap; color: var(--fg-dim); }
+    td.dir .live { color: var(--green); margin-right: 4px; }
+    td.age { white-space: nowrap; color: var(--fg-mute); }
+    td.topic .fallback { color: var(--fg-dim); font-style: italic; }
+    td.topic .none { color: var(--fg-mute); font-style: italic; }
+    td.topic .custom { border-bottom: 1px dotted var(--fg-mute); }
+    td.topic .rename-btn {
+      background: none; border: none; cursor: pointer;
+      font-size: 12px; line-height: 1; color: var(--fg-mute);
+      padding: 2px 4px; margin-left: 5px; border-radius: 4px;
+      opacity: 0; transition: color 0.12s, background 0.12s, opacity 0.12s;
+    }
+    tr.row:hover .rename-btn { opacity: 1; }
+    td.topic .rename-btn:hover { color: var(--fg); background: var(--bg-hover); }
+    td.topic input.rename-input {
+      width: 100%; box-sizing: border-box;
+      background: var(--bg); border: 1px solid var(--accent);
+      color: var(--fg); border-radius: 4px; padding: 3px 7px;
+      font-size: 12.5px; font-family: inherit;
+    }
+    td.fav { width: 1%; white-space: nowrap; padding-right: 2px; }
+    td.fav button {
+      background: none; border: none; cursor: pointer;
+      font-size: 14px; line-height: 1; color: var(--fg-mute);
+      padding: 3px 4px; border-radius: 4px;
+      transition: color 0.12s, background 0.12s;
+    }
+    td.fav button:hover { color: var(--yellow); background: var(--bg-hover); }
+    td.fav button.on { color: var(--yellow); }
+    td.del { width: 1%; white-space: nowrap; text-align: right; }
+    td.del button {
+      background: none; border: none; cursor: pointer;
+      font-size: 13px; line-height: 1; color: var(--fg-mute);
+      padding: 3px 5px; border-radius: 4px;
+      transition: color 0.12s, background 0.12s;
+    }
+    td.del button:hover:not(:disabled) { color: var(--red); background: var(--bg-hover); }
+    td.del button:disabled { opacity: 0.35; cursor: default; }
+    td.del .confirm { font-size: 11.5px; color: var(--fg-dim); }
+    td.del .confirm button {
+      font-size: 11.5px; border: 1px solid var(--border);
+      background: var(--bg-elev); color: var(--fg-dim); margin-left: 5px;
+      padding: 2px 8px;
+    }
+    td.del .confirm button.yes:hover { color: #fff; background: var(--red); border-color: var(--red); }
+    td.del .confirm button:not(.yes):hover { color: var(--fg); border-color: var(--accent); background: var(--bg-hover); }
+    tr.detail > td { background: var(--bg-elev); padding: 12px 14px 14px; }
+    .detail-actions {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .detail-actions button {
+      background: var(--bg); border: 1px solid var(--border);
+      color: var(--fg-dim); border-radius: 4px; padding: 4px 9px;
+      font-size: 12px; cursor: pointer;
+    }
+    .detail-actions button:hover { color: var(--fg); border-color: var(--accent); }
+    .detail-actions .sid { font-size: 11px; color: var(--fg-mute); font-family: monospace; }
+    .msg { margin: 0 0 10px; }
+    .msg .who { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+    .msg.user .who { color: var(--accent); }
+    .msg.assistant .who { color: var(--fg-dim); }
+    .msg .text {
+      white-space: pre-wrap; overflow-wrap: anywhere;
+      font-size: 12.5px; line-height: 1.45; color: var(--fg);
+      border-left: 2px solid var(--border); padding-left: 9px;
+    }
+    .msg.user .text { border-left-color: var(--accent); }
+    .detail-hint { font-size: 11px; color: var(--fg-mute); font-style: italic; }
+    .state { padding: 24px 10px; color: var(--fg-dim); font-size: 13px; }
+    .state.error { color: var(--red); }
+  </style>
+</head>
+<body>
+  <div class="chatswrap">
+    <div class="chatstools">
+      <h1>🕘 Letzte Chats</h1>
+      <label class="limit" title="Wie viele Chats je Projektverzeichnis maximal berücksichtigt werden">
+        Pro Verzeichnis
+        <input type="number" id="per-dir" min="1" max="20" />
+      </label>
+      <label class="limit" title="Wie viele Chats insgesamt angezeigt werden (nach dem Pro-Verzeichnis-Filter)">
+        Gesamt
+        <input type="number" id="total" min="1" max="100" />
+      </label>
+      <label class="toggle"
+             title="Gerade laufende Chats (●) vorrangig oben einsortieren — bei Sortierung nach Verzeichnis rückt das ganze Verzeichnis nach oben">
+        <input type="checkbox" id="active-first" />
+        <span class="toggle__slider"></span>
+        <span class="toggle__label">Aktive zuerst</span>
+      </label>
+      <label class="toggle"
+             title="Nur favorisierte Chats (★) anzeigen — Favoriten stehen immer oben und fallen nie aus den Limits heraus, egal wie alt sie sind">
+        <input type="checkbox" id="only-favorites" />
+        <span class="toggle__slider"></span>
+        <span class="toggle__label">Nur ★</span>
+      </label>
+      <button id="refresh-btn" title="Liste neu laden">🔄 Aktualisieren</button>
+    </div>
+    <table class="chats">
+      <thead>
+        <tr>
+          <th title="Favorit — steht immer oben, fällt nie aus den Limits heraus">★</th>
+          <th class="sortable" data-sort="dir" title="Nach Verzeichnis sortieren">Verzeichnis<span class="arrow"></span></th>
+          <th class="sortable" data-sort="age" title="Nach letzter Aktivität sortieren">Wann<span class="arrow"></span></th>
+          <th>Thema</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="state" class="state">Lade Chats …</div>
+  </div>
+
+  <script>
+  const rowsEl = document.getElementById("rows");
+  const stateEl = document.getElementById("state");
+  const perDirEl = document.getElementById("per-dir");
+  const totalEl = document.getElementById("total");
+  const activeFirstEl = document.getElementById("active-first");
+  const onlyFavoritesEl = document.getElementById("only-favorites");
+  const detailCache = new Map(); // sid → detail JSON
+  let lastChats = []; // zuletzt geladene Liste, für Neu-Sortierung ohne Fetch
+
+  // Sortierung: "dir" = Verzeichnisname/Ort (Default; innerhalb eines
+  // Verzeichnisses neueste oben), "age" = letzte Aktivität (neueste oben).
+  // Favoriten (★) stehen IMMER zuoberst, unabhängig von Alter und Sortierung;
+  // innerhalb der Favoriten gilt die normale Sortierung weiter.
+  // "Aktive zuerst" hat Vorrang vor der Spalten-Sortierung: laufende Chats —
+  // bei "dir" ganze Verzeichnisse mit laufendem Chat — stehen dann oben, die
+  // normale Sortierung gilt innerhalb der Gruppen weiter.
+  let sortKey = "dir";
+  let sortAsc = true; // bei "age": aufsteigende age_seconds = neueste oben
+
+  function sortedChats() {
+    let chats = [...lastChats];
+    if (onlyFavoritesEl.checked) chats = chats.filter((c) => c.favorite);
+    const activeFirst = activeFirstEl.checked;
+    const sign = sortAsc ? 1 : -1;
+    const favPrio = (a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0);
+    if (sortKey === "dir") {
+      const activeDirs = new Set(
+        activeFirst ? chats.filter((c) => c.active).map((c) => c.dir_name) : []);
+      chats.sort((a, b) => {
+        const fav = favPrio(a, b);
+        if (fav) return fav;
+        const prio = (activeDirs.has(b.dir_name) ? 1 : 0) - (activeDirs.has(a.dir_name) ? 1 : 0);
+        if (prio) return prio;
+        const dir = a.dir_name.localeCompare(b.dir_name, "de") * sign;
+        if (dir) return dir;
+        if (activeFirst && a.active !== b.active) return a.active ? -1 : 1;
+        return a.age_seconds - b.age_seconds; // im Verzeichnis: neueste oben
+      });
+    } else {
+      chats.sort((a, b) => {
+        const fav = favPrio(a, b);
+        if (fav) return fav;
+        if (activeFirst && a.active !== b.active) return a.active ? -1 : 1;
+        return (a.age_seconds - b.age_seconds) * sign;
+      });
+    }
+    return chats;
+  }
+
+  // Neu rendern ohne Fetch (Sortierung/Filter geändert oder ★ umgeschaltet).
+  function rerender() {
+    const chats = sortedChats();
+    renderRows(chats);
+    if (!lastChats.length) return; // Leer-/Fehlerzustand gehört loadChats
+    stateEl.className = "state";
+    stateEl.textContent = chats.length ? "" : "Keine Favoriten — ★ in einer Zeile setzt einen.";
+  }
+
+  function updateSortArrows() {
+    document.querySelectorAll("th.sortable").forEach((th) => {
+      const arrow = th.querySelector(".arrow");
+      arrow.textContent = th.dataset.sort === sortKey ? (sortAsc ? "▲" : "▼") : "";
+    });
+  }
+
+  function formatAge(sec) {
+    if (sec < 60) return "gerade eben";
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `vor ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return h === 1 ? "vor 1 Std" : `vor ${h} Std`;
+    const d = Math.floor(h / 24);
+    if (d === 1) return "gestern";
+    if (d < 7) return `vor ${d} Tagen`;
+    const dt = new Date(Date.now() - sec * 1000);
+    return `${String(dt.getDate()).padStart(2, "0")}.${String(dt.getMonth() + 1).padStart(2, "0")}.`;
+  }
+
+  async function loadSettings() {
+    try {
+      const r = await fetch("/settings");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const s = await r.json();
+      perDirEl.value = s.chats?.per_dir ?? 3;
+      totalEl.value = s.chats?.total ?? 10;
+      activeFirstEl.checked = s.chats?.active_first ?? false;
+      onlyFavoritesEl.checked = s.chats?.only_favorites ?? false;
+    } catch (e) {
+      perDirEl.value = 3;
+      totalEl.value = 10;
+      activeFirstEl.checked = false;
+      onlyFavoritesEl.checked = false;
+    }
+  }
+
+  async function saveSettings() {
+    const per_dir = Math.max(1, Math.min(20, parseInt(perDirEl.value, 10) || 3));
+    const total = Math.max(1, Math.min(100, parseInt(totalEl.value, 10) || 10));
+    perDirEl.value = per_dir;
+    totalEl.value = total;
+    try {
+      await fetch("/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chats: {
+            per_dir, total,
+            active_first: activeFirstEl.checked,
+            only_favorites: onlyFavoritesEl.checked,
+          },
+        }),
+      });
+    } catch (e) { /* Anzeige funktioniert auch ohne Persistenz */ }
+  }
+
+  function renderRows(chats) {
+    rowsEl.textContent = "";
+    for (const chat of chats) {
+      const tr = document.createElement("tr");
+      tr.className = "row";
+      tr.dataset.sid = chat.session_id;
+      tr.dataset.cwd = chat.cwd || "";
+
+      const tdDir = document.createElement("td");
+      tdDir.className = "dir";
+      tdDir.title = chat.cwd || chat.dir_name;
+      if (chat.active) {
+        const live = document.createElement("span");
+        live.className = "live";
+        live.textContent = "●";
+        live.title = "Session läuft gerade";
+        tdDir.appendChild(live);
+      }
+      tdDir.appendChild(document.createTextNode(chat.dir_name));
+
+      const tdAge = document.createElement("td");
+      tdAge.className = "age";
+      tdAge.textContent = formatAge(chat.age_seconds);
+      tdAge.title = new Date(chat.mtime * 1000).toLocaleString("de-DE");
+
+      tr.append(buildFavCell(chat), tdDir, tdAge, buildTopicCell(chat), buildDeleteCell(chat));
+      rowsEl.appendChild(tr);
+    }
+  }
+
+  // Der automatisch vergebene Titel (bzw. sein Fallback) — als Anzeige, wenn
+  // kein eigener Name gesetzt ist, sonst als Tooltip hinter dem eigenen Namen.
+  function autoTopicText(chat) {
+    return chat.title || chat.last_prompt || "(ohne Titel)";
+  }
+
+  // Thema-Zelle: zeigt den eigenen Namen (falls vergeben, Tooltip = der
+  // automatische Titel) oder den automatischen Titel/Fallback. Der ✎-Knopf
+  // (sichtbar beim Überfahren der Zeile) öffnet ein Inline-Eingabefeld;
+  // leerer Name stellt den automatischen Titel wieder her.
+  function buildTopicCell(chat) {
+    const td = document.createElement("td");
+    td.className = "topic";
+    const showView = () => {
+      td.textContent = "";
+      const span = document.createElement("span");
+      if (chat.custom_name) {
+        span.className = "custom";
+        span.textContent = chat.custom_name;
+        span.title = autoTopicText(chat);
+      } else if (chat.title) {
+        span.textContent = chat.title;
+        if (chat.title_source === "first_prompt") span.className = "fallback";
+      } else if (chat.last_prompt) {
+        span.className = "fallback";
+        span.textContent = chat.last_prompt;
+      } else {
+        span.className = "none";
+        span.textContent = "(ohne Titel)";
+      }
+      const btn = document.createElement("button");
+      btn.className = "rename-btn";
+      btn.textContent = "✎";
+      btn.title = chat.custom_name
+        ? "Eigenen Namen ändern — leeres Feld stellt den automatischen Titel wieder her"
+        : "Diesem Chat einen eigenen Namen geben — der automatische Titel bleibt als Tooltip erhalten";
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation(); // Zeile nicht aufklappen
+        showEdit();
+      });
+      td.append(span, btn);
+    };
+    const showEdit = () => {
+      td.textContent = "";
+      const input = document.createElement("input");
+      input.className = "rename-input";
+      input.maxLength = 120;
+      input.value = chat.custom_name || "";
+      input.placeholder = autoTopicText(chat);
+      input.addEventListener("click", (e) => e.stopPropagation());
+      let done = false; // Enter löst auch blur aus — nur einmal speichern
+      const commit = async () => {
+        if (done) return;
+        done = true;
+        const name = input.value.trim();
+        if (name === (chat.custom_name || "")) { showView(); return; }
+        try {
+          const r = await fetch("/chat-rename", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sid: chat.session_id, name }),
+          });
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          chat.custom_name = name || null;
+        } catch (err) {
+          stateEl.className = "state error";
+          stateEl.textContent = "Konnte Namen nicht speichern: " + String(err.message || err);
+        }
+        showView();
+      };
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") commit();
+        else if (e.key === "Escape") { done = true; showView(); }
+      });
+      input.addEventListener("blur", commit);
+      td.appendChild(input);
+      input.focus();
+      input.select();
+    };
+    showView();
+    return td;
+  }
+
+  // ★-Zelle: schaltet den Favoriten-Status um (POST /chat-favorite, in den
+  // Settings persistiert). Favoriten stehen immer oben und fallen nie aus
+  // den per_dir/total-Limits heraus — egal wie alt sie sind.
+  function buildFavCell(chat) {
+    const td = document.createElement("td");
+    td.className = "fav";
+    const btn = document.createElement("button");
+    btn.textContent = chat.favorite ? "★" : "☆";
+    btn.className = chat.favorite ? "on" : "";
+    btn.title = chat.favorite
+      ? "Favorit entfernen — der Chat konkurriert wieder normal um die Listen-Plätze"
+      : "Als Favorit anheften — steht immer oben, fällt nie aus den Limits heraus";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const r = await fetch("/chat-favorite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sid: chat.session_id, favorite: !chat.favorite }),
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        chat.favorite = !chat.favorite;
+        rerender(); // Zeile rückt sofort an ihren neuen Platz
+      } catch (err) {
+        btn.disabled = false;
+        stateEl.className = "state error";
+        stateEl.textContent = "Konnte Favorit nicht speichern: " + String(err.message || err);
+      }
+    });
+    td.appendChild(btn);
+    return td;
+  }
+
+  // Lösch-Zelle mit Inline-Bestätigung: 🗑 → „Löschen? [Ja] [✕]".
+  // Laufende Sessions (●) sind serverseitig geschützt (409) und der Knopf
+  // dafür deaktiviert — Codex schreibt die Datei noch. Der Server löscht über
+  // `codex delete`, damit auch Codex' eigener Session-Index sauber bleibt.
+  function buildDeleteCell(chat) {
+    const td = document.createElement("td");
+    td.className = "del";
+    const showButton = () => {
+      td.textContent = "";
+      const btn = document.createElement("button");
+      btn.textContent = "🗑";
+      if (chat.active) {
+        btn.disabled = true;
+        btn.title = "Laufende Session kann nicht gelöscht werden";
+      } else {
+        btn.title = "Diesen Chat löschen (per „codex delete“ — Rollout-Datei und Codex-Index-Eintrag werden entfernt)";
+        btn.addEventListener("click", showConfirm);
+      }
+      td.appendChild(btn);
+    };
+    const showConfirm = () => {
+      td.textContent = "";
+      const wrap = document.createElement("span");
+      wrap.className = "confirm";
+      wrap.append("Löschen?");
+      const yes = document.createElement("button");
+      yes.className = "yes";
+      yes.textContent = "Ja";
+      yes.title = "Chat endgültig löschen — nicht rückgängig zu machen";
+      yes.addEventListener("click", async () => {
+        yes.disabled = true;
+        try {
+          const r = await fetch("/chat-delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sid: chat.session_id }),
+          });
+          if (!r.ok) {
+            throw new Error(r.status === 409 ? "Session läuft gerade" : "HTTP " + r.status);
+          }
+          detailCache.delete(chat.session_id);
+          loadChats(); // rückt ggf. einen älteren Chat nach
+        } catch (err) {
+          showButton();
+          stateEl.className = "state error";
+          stateEl.textContent = "Konnte Chat nicht löschen: " + String(err.message || err);
+        }
+      });
+      const no = document.createElement("button");
+      no.textContent = "✕";
+      no.title = "Abbrechen";
+      no.addEventListener("click", showButton);
+      wrap.append(yes, no);
+      td.appendChild(wrap);
+    };
+    showButton();
+    return td;
+  }
+
+  async function loadChats() {
+    stateEl.className = "state";
+    stateEl.textContent = "Lade Chats …";
+    rowsEl.textContent = "";
+    try {
+      const r = await fetch("/chats-data");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const data = await r.json();
+      if (!data.chats.length) {
+        stateEl.textContent = "Keine Chats gefunden.";
+        return;
+      }
+      stateEl.textContent = "";
+      lastChats = data.chats;
+      updateSortArrows();
+      rerender();
+    } catch (e) {
+      stateEl.className = "state error";
+      stateEl.textContent = "Konnte Chats nicht laden: " + String(e.message || e);
+    }
+  }
+
+  // Pfad für die Shell quoten (nur wenn nötig, damit der Befehl lesbar bleibt).
+  function shellQuote(s) {
+    return /^[A-Za-z0-9_\/.,:@%+=-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+  }
+
+  function renderDetail(td, sid, cwd, detail) {
+    td.textContent = "";
+
+    const actions = document.createElement("div");
+    actions.className = "detail-actions";
+    const openBtn = document.createElement("button");
+    openBtn.textContent = "📁 Verzeichnis öffnen";
+    openBtn.title = "Projektverzeichnis im Dateimanager öffnen";
+    openBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      fetch("/open-dir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: cwd, sid }),
+      }).catch(() => {});
+    });
+    actions.appendChild(openBtn);
+    // Fortsetzen: im Projektverzeichnis der Session, damit Codex dort weiterarbeitet.
+    const resumeCmd = cwd ? `cd ${shellQuote(cwd)} && codex resume ${sid}` : `codex resume ${sid}`;
+    const copyBtn = document.createElement("button");
+    copyBtn.textContent = "📋 codex resume kopieren";
+    copyBtn.title = `Befehl zum Fortsetzen dieses Chats in die Zwischenablage kopieren:\n${resumeCmd}`;
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      fetch("/copy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: resumeCmd }),
+      }).then(() => {
+        copyBtn.textContent = "✓ kopiert";
+        setTimeout(() => { copyBtn.textContent = "📋 codex resume kopieren"; }, 1500);
+      }).catch(() => {});
+    });
+    actions.appendChild(copyBtn);
+    const sidEl = document.createElement("span");
+    sidEl.className = "sid";
+    sidEl.textContent = sid;
+    actions.appendChild(sidEl);
+    td.appendChild(actions);
+
+    if (!detail.messages.length) {
+      const empty = document.createElement("div");
+      empty.className = "detail-hint";
+      empty.textContent = "Keine darstellbaren Nachrichten im Datei-Ende gefunden.";
+      td.appendChild(empty);
+      return;
+    }
+    for (const msg of detail.messages) {
+      const box = document.createElement("div");
+      box.className = "msg " + msg.role;
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = msg.role === "user" ? "Du" : "Codex";
+      const text = document.createElement("div");
+      text.className = "text";
+      text.textContent = msg.text + (msg.truncated ? " (gekürzt)" : "");
+      box.append(who, text);
+      td.appendChild(box);
+    }
+    if (detail.partial) {
+      const hint = document.createElement("div");
+      hint.className = "detail-hint";
+      hint.textContent = "… nur das Ende des Chats — ältere Nachrichten sind nicht geladen.";
+      td.appendChild(hint);
+    }
+  }
+
+  rowsEl.addEventListener("click", async (e) => {
+    if (e.target.closest("td.del")) return; // Löschen klappt den Verlauf nicht auf/zu
+    if (e.target.closest("td.fav")) return; // ★ ebenso wenig
+    const row = e.target.closest("tr.row");
+    if (!row) return;
+    const existing = row.nextElementSibling;
+    if (existing && existing.classList.contains("detail")) {
+      existing.remove();
+      row.classList.remove("expanded");
+      return;
+    }
+    document.querySelectorAll("tr.detail").forEach((d) => d.remove());
+    document.querySelectorAll("tr.row.expanded").forEach((r) => r.classList.remove("expanded"));
+
+    row.classList.add("expanded");
+    const sid = row.dataset.sid;
+    const detailTr = document.createElement("tr");
+    detailTr.className = "detail";
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.textContent = "Lade Verlauf …";
+    detailTr.appendChild(td);
+    row.after(detailTr);
+
+    try {
+      let detail = detailCache.get(sid);
+      if (!detail) {
+        const r = await fetch(`/chat-detail?sid=${encodeURIComponent(sid)}`);
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        detail = await r.json();
+        detailCache.set(sid, detail);
+      }
+      renderDetail(td, sid, row.dataset.cwd, detail);
+    } catch (err) {
+      td.textContent = "Konnte Verlauf nicht laden: " + String(err.message || err);
+    }
+  });
+
+  document.querySelectorAll("th.sortable").forEach((th) => {
+    th.addEventListener("click", () => {
+      if (sortKey === th.dataset.sort) {
+        sortAsc = !sortAsc;
+      } else {
+        sortKey = th.dataset.sort;
+        sortAsc = true;
+      }
+      updateSortArrows();
+      rerender();
+    });
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", () => {
+    detailCache.clear();
+    loadChats();
+  });
+  perDirEl.addEventListener("change", async () => { await saveSettings(); loadChats(); });
+  totalEl.addEventListener("change", async () => { await saveSettings(); loadChats(); });
+  activeFirstEl.addEventListener("change", () => {
+    saveSettings(); // Umsortieren braucht keinen neuen Fetch
+    rerender();
+  });
+  onlyFavoritesEl.addEventListener("change", () => {
+    saveSettings(); // Favoriten sind immer mitgeladen — nur filtern, kein Fetch
+    rerender();
+  });
+
+  loadSettings().then(loadChats);
+
+  // Fenster auf allen Arbeitsflächen anzeigen (abschaltbar über
+  // windows.sticky in ~/.config/codex-token-monitor/config.json)
+  fetch("/sticky", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: document.title }),
+  }).catch(() => {});
+  </script>
+</body>
+</html>

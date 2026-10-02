@@ -115,7 +115,7 @@ TMP_PROFILE="$(mktemp -d -t codex-token-display.XXXXXX)"
   --user-data-dir="$TMP_PROFILE" \
   --no-first-run \
   --no-default-browser-check \
-  --window-size=520,640 \
+  --window-size=680,640 \
   >/dev/null 2>&1 || true
 
 # When the browser window closes, we exit and the trap cleans up.

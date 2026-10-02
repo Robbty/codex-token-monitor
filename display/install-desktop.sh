@@ -39,12 +39,17 @@ elif [[ -x "$HERE/../target/release/codex-tokens" ]]; then
   TOKENS_BIN="$(cd "$HERE/.." && pwd)/target/release/codex-tokens"
 fi
 
-# Build the Exec line. Pin CODEX_TOKENS_BIN if we found one.
+# Same for the codex CLI itself: the 🗑 button in "Letzte Chats" runs
+# `codex delete`, and an nvm-installed codex is not on a desktop PATH.
+CODEX_CLI="$(command -v codex 2>/dev/null || true)"
+
+# Build the Exec line. Pin CODEX_TOKENS_BIN / CODEX_BIN if we found them.
 EXEC="$LAUNCHER"
 [[ -n "$SCOPE_ARG" ]] && EXEC="$EXEC $(printf '%q' "$SCOPE_ARG")"
-if [[ -n "$TOKENS_BIN" ]]; then
-  EXEC="env CODEX_TOKENS_BIN=$(printf '%q' "$TOKENS_BIN") $EXEC"
-fi
+ENV_PINS=""
+[[ -n "$TOKENS_BIN" ]] && ENV_PINS="$ENV_PINS CODEX_TOKENS_BIN=$(printf '%q' "$TOKENS_BIN")"
+[[ -n "$CODEX_CLI" ]] && ENV_PINS="$ENV_PINS CODEX_BIN=$(printf '%q' "$CODEX_CLI")"
+[[ -n "$ENV_PINS" ]] && EXEC="env$ENV_PINS $EXEC"
 
 APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$APP_DIR"
