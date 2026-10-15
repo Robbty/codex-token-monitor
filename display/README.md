@@ -306,14 +306,75 @@ ganze Verzeichnisse mit einem laufenden Chat nach oben.
 
 Der Schalter **„Nur ★"** blendet alles außer den Favoriten aus.
 
-**Klick auf eine Zeile** klappt einen kondensierten Gesprächsverlauf auf (die
-letzten Nachrichten von dir und Codex, gekürzt), dazu:
+**Klick auf eine Zeile** klappt das Ende des Gesprächsverlaufs auf (deine
+Nachrichten und die Antworten von Codex), dazu:
 
 - **📁 Verzeichnis öffnen** — wie 📁 auf den Karten.
 - **📋 codex resume kopieren** — kopiert
   `cd <Projektordner> && codex resume <Session-ID>`. In einem Terminal
   einfügen (`Strg+Shift+V`) und Enter drücken — der Chat geht dort weiter,
   wo er aufgehört hat.
+- **Letzte Zeilen** (Feld im Kopf des Verlaufs, Default 50, höchstens
+  1000): so viele Textzeilen vom Ende des Chats werden angezeigt, und zwar
+  **vollständig** — das Ende der letzten Antwort (z. B. der Pfad zu einer
+  Übergabe-Datei) wird nicht abgeschnitten. Nur die älteste gezeigte
+  Nachricht kann vorn gekürzt sein (beginnt mit „…“). Steht oben „ältere
+  Teile sind ausgeblendet“, zeigt ein größerer Wert mehr. Der Wert gilt für
+  alle Chats und wird gespeichert (`chats.detail_lines`).
+
+**🔍 Suchfeld** (unter den Schaltern): findet heraus, in welchem der
+gelisteten Chats ein Begriff vorkam.
+
+- Durchsucht werden **nur die Chats, die gerade in der Liste stehen**, diese
+  aber **vollständig**, also auch alte Nachrichten, die der aufgeklappte
+  Verlauf nicht mehr zeigt. Gesucht wird in deinen Nachrichten, in den
+  Antworten von Codex, im Titel und im eigenen Namen; Werkzeug-Ausgaben und
+  der Kontext, den Codex selbst einfügt (z. B. `AGENTS.md`-Anweisungen),
+  zählen nicht. Groß- und Kleinschreibung ist egal. Die Suche startet ab
+  2 Zeichen von selbst, sobald du kurz mit dem Tippen aufhörst.
+- **Suchausdruck** — mehrere Begriffe lassen sich verknüpfen. Die Bedingung
+  gilt **je Chat**: Bei `a AND b` müssen beide Begriffe irgendwo im selben
+  Chat vorkommen, nicht in derselben Nachricht.
+
+  | Eingabe | findet Chats, in denen … |
+  |---|---|
+  | `restic` | „restic" vorkommt (auch als Wortteil, z. B. „Restic-Sicherung") |
+  | `restic timeshift` | beide Wörter vorkommen (wie `restic AND timeshift`) |
+  | `restic OR borg` | mindestens eins der beiden Wörter vorkommt |
+  | `steuer AND (binance OR poloniex)` | „steuer" vorkommt und dazu „binance" oder „poloniex" |
+  | `restic NOT timeshift` | „restic" vorkommt, „timeshift" aber nirgends |
+  | `"persönlicher Ordner"` | genau diese Wortfolge vorkommt |
+
+  Die Verknüpfungen **AND**, **OR** und **NOT** (gleichwertig **UND**,
+  **ODER**, **NICHT**) gelten nur in **Großbuchstaben**; klein geschrieben
+  („und", „or") sind es normale Suchwörter. AND bindet stärker als OR:
+  `a OR b c` heißt `a OR (b AND c)`. Klammern legen die Reihenfolge fest.
+  Ist der Ausdruck unvollständig (z. B. offene Klammer, `AND` am Ende), steht
+  neben dem Feld in Rot, was fehlt.
+- Treffer werden **markiert, nicht gefiltert**. Jede Zeile der Tabelle ist
+  ein Chat. Die Zeile eines passenden Chats bekommt einen blauen Balken links
+  und das Abzeichen **🔍 n** (Suchbegriffe in n Nachrichten dieses Chats
+  gefunden; „🔍 Titel" = nur im Titel; ein nacktes „🔍" = passt nur über NOT,
+  es gibt nichts zu zeigen). Die Zeilen aller anderen Chats werden blasser
+  und tragen keine gelbe Markierung. Neben dem Suchfeld steht, wie viele der
+  gelisteten Chats passen.
+- Der Schalter **„Nur Treffer"** neben dem Suchfeld blendet während einer
+  Suche alle Chats aus, die nicht passen, statt sie blass anzuzeigen. Ohne
+  Suchbegriff wirkt er nicht; dann stehen wie gewohnt alle Chats da. Die
+  Angabe „Treffer in X von Y Chats" zählt weiter über alle gelisteten Chats.
+  Die Stellung des Schalters wird gespeichert (`chats.only_hits`, Default an).
+- Nach der Suche rollt das Fenster zum ersten Treffer. **Enter** springt zum
+  nächsten, nach dem letzten wieder zum ersten. Die Suchleiste bleibt beim
+  Scrollen oben sichtbar.
+- Ein **aufgeklappter Treffer** zeigt über dem Verlauf einen Kasten
+  „🔍 Suchbegriffe in n Nachrichten" mit Fundstellen samt Datum und Uhrzeit:
+  zu jedem gefundenen Begriff die erste, aufgefüllt auf drei. Die
+  Suchbegriffe sind dort und im Verlauf gelb hervorgehoben.
+- **Esc** oder das **×** im Suchfeld leert die Suche; alle Markierungen
+  verschwinden. Der Suchausdruck wird nicht gespeichert.
+- Wer weiter zurück suchen will, stellt vorher die Limits höher
+  (**Pro Verzeichnis**, **Gesamt**) oder setzt ★ auf ältere Chats: Alles, was
+  gelistet ist, wird durchsucht.
 
 **Limits** — direkt im Fenster einstellbar:
 
